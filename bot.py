@@ -2536,14 +2536,25 @@ async def admin_inventory_command(ctx, member: discord.Member):
     
     await ctx.send(embed=embed)
 
-# ============== КОМАНДА !ПОМОЩЬ ==============
-@bot.command(name='помощь', aliases=['хелп', 'команды', 'помощка'])
+# ============== ОБНОВЛЁННАЯ КОМАНДА !ПОМОЩЬ ==============
+@bot.command(name='помощь', aliases=['хелп', 'команды'])
 async def help_command(ctx):
-    """Показывает список доступных команд"""
+    """Показывает список всех доступных команд"""
+    
+    # Подсчёт статистики
+    users_in_system = len(user_data)
+    total_shop_items = len(shop_data)
+    
+    # Считаем реальных пользователей на сервере
+    real_users = 0
+    for guild in bot.guilds:
+        for member in guild.members:
+            if not member.bot:
+                real_users += 1
     
     embed = discord.Embed(
         title=f"📚 **СПРАВКА ПО КОМАНДАМ**",
-        description="Привет! Вот список всех доступных команд:",
+        description=f"Привет, {ctx.author.mention}! Вот список всех команд:",
         color=0x3498db
     )
     
@@ -2553,6 +2564,7 @@ async def help_command(ctx):
     if bot.user.avatar:
         embed.set_thumbnail(url=bot.user.avatar.url)
     
+    # ===== ПРОФИЛЬ И СТАТИСТИКА =====
     profile_commands = (
         "`!ур` / `!уровень` - твой профиль\n"
         "`!ур @пользователь` - профиль другого\n"
@@ -2563,6 +2575,7 @@ async def help_command(ctx):
     )
     embed.add_field(name="👤 **ПРОФИЛЬ**", value=profile_commands, inline=False)
     
+    # ===== МАГАЗИН И ЭКОНОМИКА =====
     shop_commands = (
         "`!магазин` / `!shop` - открыть магазин\n"
         "`!купить [ID]` - купить предмет\n"
@@ -2571,23 +2584,32 @@ async def help_command(ctx):
     )
     embed.add_field(name="🛒 **МАГАЗИН**", value=shop_commands, inline=False)
     
+    # ===== КАЗИНО =====
+    casino_commands = (
+        "`!казино` - список игр казино\n"
+        "`!орёл [ставка]` / `!решка [ставка]` - орлянка\n"
+        "`!кость [ставка] [число]` - угадай число\n"
+        "`!слоты [ставка]` - игровые слоты\n"
+        "`!рулетка [цвет] [ставка]` - рулетка\n"
+        "`!бонус` - ежедневный бонус"
+    )
+    embed.add_field(name="🎰 **КАЗИНО**", value=casino_commands, inline=False)
+    
+    # ===== ОБЩЕЕ =====
     general_commands = (
         "`!помощь` / `!хелп` - это меню\n"
-        "`!падмин` - команды для админов\n"
-        "`!преды @пользователь` - предупреждения"
+        "`!падмин` - команды для админов"
     )
     embed.add_field(name="📋 **ОБЩЕЕ**", value=general_commands, inline=False)
     
-    boost_info = (
-        "⚡ **Бустеры опыта:**\n"
-        "• Некоторые роли дают больше опыта\n"
-        "• Активный бустер виден в `!ур`\n"
-        "• Чем выше множитель, тем быстрее рост"
+    # ===== СТАТИСТИКА СЕРВЕРА =====
+    stats = (
+        f"👥 **Пользователей на сервере:** {real_users}\n"
+        f"📊 **В системе уровней:** {users_in_system}\n"
+        f"🛍️ **Товаров в магазине:** {total_shop_items}\n"
+        f"💰 **Всего коинов в обороте:** {sum(u.get('coins', 0) for u in user_data.values()):,}"
     )
-    embed.add_field(name="ℹ️ **ПОЛЕЗНО ЗНАТЬ**", value=boost_info, inline=False)
-    
-    embed.add_field(name="━━━━━━━━━━━━━━━━━━", value="ㅤ", inline=False)
-    embed.add_field(name="ㅤ", value="📌 **Приятного времяпрепровождения на сервере!**", inline=False)
+    embed.add_field(name="📊 **СТАТИСТИКА**", value=stats, inline=False)
     
     await ctx.send(embed=embed)
 
@@ -3463,6 +3485,44 @@ async def reset_levels_command(ctx):
     
     await ctx.send(embed=embed)
 
+# ============== АДМИН-КОМАНДЫ ЭКОНОМИКИ ==============
+
+@bot.command(name='give_coins')
+@commands.has_permissions(administrator=True)
+async def give_coins_command(ctx, member: discord.Member, amount: int):
+    """!give_coins @пользователь [количество] - выдать коины"""
+    user_id = str(member.id)
+    
+    if user_id not in user_data:
+        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(member), 'items': []}
+    
+    user_data[user_id]['coins'] += amount
+    user_data[user_id]['total_coins_earned'] += amount
+    save_data(user_data)
+    
+    embed = discord.Embed(
+        title=f"✅ **КОИНЫ ВЫДАНЫ**", 
+        description=f"{member.mention} получил **{amount}** 🪙!", 
+        color=0x00ff00
+    )
+    embed.add_field(name="💰 Новый баланс", value=f"**{user_data[user_id]['coins']}** 🪙", inline=False)
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='set_voice_xp')
+@commands.has_permissions(administrator=True)
+async def set_voice_xp_command(ctx, xp_per_minute: int):
+    """!set_voice_xp [количество] - изменить XP за минуту в войсе"""
+    global XP_PER_VOICE_MINUTE
+    XP_PER_VOICE_MINUTE = xp_per_minute
+    
+    embed = discord.Embed(
+        title=f"⚡ **НАСТРОЙКИ ИЗМЕНЕНЫ**", 
+        description=f"Опыт за минуту в войсе установлен: **{xp_per_minute} XP**", 
+        color=0x00ff00
+    )
+    await ctx.send(embed=embed)
+
 # ============== АДМИН-КОМАНДЫ ДЛЯ МАГАЗИНА ==============
 
 @bot.command(name='add_item')
@@ -3726,6 +3786,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
