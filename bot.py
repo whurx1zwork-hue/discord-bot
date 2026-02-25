@@ -2982,6 +2982,260 @@ async def reset_levels_command(ctx):
     
     await ctx.send(embed=embed)
 
+# ============== АДМИН-КОМАНДЫ ДЛЯ МАГАЗИНА ==============
+
+@bot.command(name='add_item')
+@commands.has_permissions(administrator=True)
+async def add_item_command(ctx, item_id: str, price: int, *, name: str):
+    """!add_item [ID] [цена] [название] - добавить обычный товар"""
+    if item_id in shop_data:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"Товар с ID `{item_id}` уже существует!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    shop_data[item_id] = {
+        'name': name, 
+        'price': price, 
+        'description': 'Нет описания'
+    }
+    save_shop(shop_data)
+    
+    embed = discord.Embed(
+        title=f"✅ **ТОВАР ДОБАВЛЕН**", 
+        description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙", 
+        color=0x00ff00
+    )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='add_temp_item')
+@commands.has_permissions(administrator=True)
+async def add_temp_item_command(ctx, item_id: str, price: int, duration: int, *, name: str):
+    """!add_temp_item [ID] [цена] [минуты] [название] - добавить временный товар"""
+    if item_id in shop_data:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"Товар с ID `{item_id}` уже существует!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Форматируем время для красивого отображения
+    if duration < 60:
+        time_str = f"{duration} мин"
+    elif duration < 1440:
+        time_str = f"{duration//60} ч"
+    else:
+        time_str = f"{duration//1440} дн"
+    
+    shop_data[item_id] = {
+        'name': name,
+        'price': price,
+        'description': f'Временный товар на {time_str}',
+        'duration': duration
+    }
+    save_shop(shop_data)
+    
+    embed = discord.Embed(
+        title=f"✅ **ВРЕМЕННЫЙ ТОВАР ДОБАВЛЕН**",
+        description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\nДлительность: **{time_str}**",
+        color=0x00ff00
+    )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='remove_item')
+@commands.has_permissions(administrator=True)
+async def remove_item_command(ctx, item_id: str):
+    """!remove_item [ID] - удалить товар"""
+    if item_id not in shop_data:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"Товар с ID `{item_id}` не найден!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    item_name = shop_data[item_id]['name']
+    del shop_data[item_id]
+    save_shop(shop_data)
+    
+    embed = discord.Embed(
+        title=f"✅ **ТОВАР УДАЛЁН**", 
+        description=f"Товар **{item_name}** (ID: `{item_id}`) удалён из магазина", 
+        color=0x00ff00
+    )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='edit_item')
+@commands.has_permissions(administrator=True)
+async def edit_item_command(ctx, item_id: str, field: str, *, value):
+    """!edit_item [ID] [field] [value] - изменить товар (field: name, price, description, duration)"""
+    if item_id not in shop_data:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"Товар с ID `{item_id}` не найден!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if field.lower() == 'name':
+        old = shop_data[item_id]['name']
+        shop_data[item_id]['name'] = value
+        field_name = "Название"
+    elif field.lower() == 'price':
+        try:
+            value = int(value)
+            old = shop_data[item_id]['price']
+            shop_data[item_id]['price'] = value
+            field_name = "Цена"
+        except:
+            embed = discord.Embed(
+                title=f"🔴 Ошибка",
+                description=f"Цена должна быть числом!",
+                color=0xff0000
+            )
+            await ctx.send(embed=embed)
+            return
+    elif field.lower() == 'description':
+        old = shop_data[item_id].get('description', 'Нет описания')
+        shop_data[item_id]['description'] = value
+        field_name = "Описание"
+    elif field.lower() == 'duration':
+        try:
+            value = int(value)
+            old = shop_data[item_id].get('duration', 0)
+            shop_data[item_id]['duration'] = value
+            field_name = "Длительность"
+        except:
+            embed = discord.Embed(
+                title=f"🔴 Ошибка",
+                description=f"Длительность должна быть числом (в минутах)!",
+                color=0xff0000
+            )
+            await ctx.send(embed=embed)
+            return
+    else:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка", 
+            description=f"Поле должно быть: name, price, description или duration", 
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    save_shop(shop_data)
+    
+    # Красивое отображение времени для duration
+    if field.lower() == 'duration':
+        if value < 60:
+            display_value = f"{value} мин"
+        elif value < 1440:
+            display_value = f"{value//60} ч"
+        else:
+            display_value = f"{value//1440} дн"
+        
+        if old < 60:
+            old_display = f"{old} мин"
+        elif old < 1440:
+            old_display = f"{old//60} ч"
+        else:
+            old_display = f"{old//1440} дн"
+        
+        embed = discord.Embed(
+            title=f"✅ **ТОВАР ИЗМЕНЁН**", 
+            description=f"ID: `{item_id}`\n{field_name}: `{old_display}` → `{display_value}`", 
+            color=0x00ff00
+        )
+    else:
+        embed = discord.Embed(
+            title=f"✅ **ТОВАР ИЗМЕНЁН**", 
+            description=f"ID: `{item_id}`\n{field_name}: `{old}` → `{value}`", 
+            color=0x00ff00
+        )
+    
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='set_role')
+@commands.has_permissions(administrator=True)
+async def set_role_command(ctx, item_id: str, role: discord.Role):
+    """!set_role [ID товара] @роль - привязать роль к товару"""
+    if item_id not in shop_data:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"Товар с ID `{item_id}` не найден!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    shop_data[item_id]['role_id'] = role.id
+    save_shop(shop_data)
+    
+    boost_info = ""
+    if role.id in BOOST_ROLES:
+        boost_mult = BOOST_ROLES[role.id]
+        boost_info = f"\n⚡ У этой роли есть бустер x{boost_mult}!"
+    
+    duration_info = ""
+    if 'duration' in shop_data[item_id]:
+        duration = shop_data[item_id]['duration']
+        if duration < 60:
+            time_str = f"{duration} мин"
+        elif duration < 1440:
+            time_str = f"{duration//60} ч"
+        else:
+            time_str = f"{duration//1440} дн"
+        duration_info = f"\n⏰ Временная роль на {time_str}"
+    
+    embed = discord.Embed(
+        title=f"✅ **РОЛЬ ПРИВЯЗАНА**", 
+        description=f"К товару **{shop_data[item_id]['name']}** привязана роль {role.mention}{boost_info}{duration_info}", 
+        color=0x00ff00
+    )
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='remove_role')
+@commands.has_permissions(administrator=True)
+async def remove_role_command(ctx, item_id: str):
+    """!remove_role [ID товара] - убрать привязку роли у товара"""
+    if item_id not in shop_data:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"Товар с ID `{item_id}` не найден!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if 'role_id' in shop_data[item_id]:
+        del shop_data[item_id]['role_id']
+        save_shop(shop_data)
+        
+        embed = discord.Embed(
+            title=f"✅ **РОЛЬ УДАЛЕНА**", 
+            description=f"У товара **{shop_data[item_id]['name']}** больше нет привязанной роли", 
+            color=0x00ff00
+        )
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка", 
+            description=f"У товара **{shop_data[item_id]['name']}** нет привязанной роли!", 
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+
 # ============== ЗАПУСК ==============
 if __name__ == "__main__":
     token = os.getenv('DISCORD_TOKEN')
@@ -2991,6 +3245,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
