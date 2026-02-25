@@ -2975,5 +2975,6 @@ if __name__ == "__main__":
         print("❌ ОШИБКА: Токен не найден! Добавь DISCORD_TOKEN в переменные окружения Railway")
     else:
         print(f"✅ Бот запускается...")
-
+keep_alive()  # Запускаем веб-сервер
         bot.run(token)
+
