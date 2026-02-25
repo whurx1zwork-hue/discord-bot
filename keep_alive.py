@@ -14,7 +14,6 @@ def run():
     app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
-    # Запускаем веб-сервер в отдельном потоке
     t = Thread(target=run)
     t.daemon = True
     t.start()
