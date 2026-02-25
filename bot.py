@@ -3487,6 +3487,118 @@ async def reset_levels_command(ctx):
 
 # ============== АДМИН-КОМАНДЫ ЭКОНОМИКИ ==============
 
+# ============== КОМАНДА !SET_BOOST ==============
+@bot.command(name='set_boost')
+@commands.has_permissions(administrator=True)
+async def set_boost_command(ctx, role: discord.Role, multiplier: float):
+    """
+    !set_boost @роль множитель - настроить бустер для роли
+    Пример: !set_boost @Бустер 25% 1.25
+    """
+    global BOOST_ROLES
+    
+    if multiplier < 1.0:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"Множитель должен быть больше или равен 1.0",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Сохраняем настройку
+    BOOST_ROLES[role.id] = multiplier
+    
+    # Сохраняем в файл
+    save_boosts()
+    
+    # Очищаем кеш пользователей
+    global user_boost_cache
+    user_boost_cache.clear()
+    
+    bonus_percent = (multiplier - 1) * 100
+    
+    embed = discord.Embed(
+        title=f"⚡ **БУСТЕР НАСТРОЕН**",
+        description=f"Роль {role.mention} теперь даёт множитель опыта **x{multiplier}**",
+        color=0x00ff00
+    )
+    embed.add_field(name="📊 Бонус к опыту", value=f"+{bonus_percent:.0f}%", inline=True)
+    embed.add_field(name="💾 Сохранение", value="Автоматически сохранено", inline=True)
+    
+    await ctx.send(embed=embed)
+
+
+# ============== КОМАНДА !REMOVE_BOOST ==============
+@bot.command(name='remove_boost')
+@commands.has_permissions(administrator=True)
+async def remove_boost_command(ctx, role: discord.Role):
+    """
+    !remove_boost @роль - убрать бустер у роли
+    """
+    global BOOST_ROLES
+    
+    if role.id in BOOST_ROLES:
+        old_mult = BOOST_ROLES[role.id]
+        del BOOST_ROLES[role.id]
+        
+        # Сохраняем изменения
+        save_boosts()
+        
+        # Очищаем кеш
+        global user_boost_cache
+        user_boost_cache.clear()
+        
+        embed = discord.Embed(
+            title=f"✅ **БУСТЕР УБРАН**",
+            description=f"Роль {role.mention} больше не даёт бустер (было x{old_mult})",
+            color=0x00ff00
+        )
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(
+            title=f"🔴 Ошибка",
+            description=f"У роли {role.mention} нет настроенного бустера",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+
+
+# ============== КОМАНДА !LIST_BOOSTS ==============
+@bot.command(name='list_boosts')
+@commands.has_permissions(administrator=True)
+async def list_boosts_command(ctx):
+    """
+    !list_boosts - показать все настроенные бустеры
+    """
+    if not BOOST_ROLES:
+        embed = discord.Embed(
+            title=f"📋 **СПИСОК БУСТЕРОВ**",
+            description="Пока нет настроенных бустеров",
+            color=0xffaa00
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    embed = discord.Embed(
+        title=f"⚡ **СПИСОК БУСТЕРОВ**",
+        description=f"Настроено ролей: {len(BOOST_ROLES)}",
+        color=0x3498db
+    )
+    
+    boost_text = ""
+    for role_id, multiplier in BOOST_ROLES.items():
+        role = ctx.guild.get_role(role_id)
+        if role:
+            bonus = (multiplier - 1) * 100
+            boost_text += f"• {role.mention} → **x{multiplier}** (+{bonus:.0f}%)\n"
+        else:
+            boost_text += f"• Роль ID: `{role_id}` (удалена) → x{multiplier}\n"
+    
+    embed.add_field(name="📊 **АКТИВНЫЕ БУСТЕРЫ**", value=boost_text, inline=False)
+    
+    await ctx.send(embed=embed)
+
 @bot.command(name='give_coins')
 @commands.has_permissions(administrator=True)
 async def give_coins_command(ctx, member: discord.Member, amount: int):
@@ -3859,6 +3971,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
