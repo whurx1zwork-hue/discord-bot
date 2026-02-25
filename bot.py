@@ -2685,6 +2685,487 @@ async def admin_help_error(ctx, error):
         )
         await ctx.send(embed=embed)
 
+# ============== СИСТЕМА КАЗИНО ==============
+import random
+import time
+
+# Настройки казино
+CASINO_SETTINGS = {
+    'min_bet': 10,           # Минимальная ставка
+    'max_bet': 10000,        # Максимальная ставка
+    'coin_flip_mult': 1.8,    # Множитель выигрыша (x1.8, т.е. +80%)
+    'dice_mult': 5,           # Множитель для угадывания числа (x5)
+    'slot_mult': {            # Множители для слотов
+        '🍒': 2,              # Вишня - x2
+        '🍋': 3,              # Лимон - x3
+        '🍊': 4,              # Апельсин - x4
+        '🍇': 5,              # Виноград - x5
+        '💎': 10,             # Алмаз - x10
+        '7⃣': 20              # Джекпот - x20
+    }
+}
+
+# ============== КОМАНДА !КАЗИНО ==============
+@bot.command(name='казино', aliases=['casino', 'игры'])
+async def casino_command(ctx):
+    """Показывает список доступных игр в казино"""
+    
+    embed = discord.Embed(
+        title=f"🎰 **КАЗИНО**",
+        description="Добро пожаловать в казино! Выбери игру:",
+        color=0xffd700  # Золотой цвет
+    )
+    
+    embed.add_field(
+        name="🪙 **!орёл** / **!решка**", 
+        value=f"Ставка на орла или решку\nМножитель: x{CASINO_SETTINGS['coin_flip_mult']} (возврат +80%)\nМин: {CASINO_SETTINGS['min_bet']} 🪙",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🎲 **!кость** / **!кубик**", 
+        value=f"Бросок кубика (1-6). Угадай число!\nМножитель: x{CASINO_SETTINGS['dice_mult']}\nМин: {CASINO_SETTINGS['min_bet']} 🪙",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🎰 **!слоты** / **!слот**", 
+        value=f"Крути слоты! Три одинаковых символа = выигрыш\n"
+               f"🍒 x2 | 🍋 x3 | 🍊 x4 | 🍇 x5 | 💎 x10 | 7⃣ x20\n"
+               f"Мин: {CASINO_SETTINGS['min_bet']} 🪙",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="📊 **!рулетка [цвет] [ставка]**", 
+        value=f"Ставка на красное/черное\nМножитель: x2\nМин: {CASINO_SETTINGS['min_bet']} 🪙",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="ℹ️ **ПРАВИЛА**",
+        value=f"Минимальная ставка: {CASINO_SETTINGS['min_bet']} 🪙\n"
+              f"Максимальная ставка: {CASINO_SETTINGS['max_bet']} 🪙\n"
+              f"Удачи! 🍀",
+        inline=False
+    )
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !ОРЁЛ / !РЕШКА ==============
+@bot.command(name='орёл', aliases=['орел', 'решка', 'coin'])
+async def coin_flip_command(ctx, bet: int = None):
+    """!орёл [ставка] - сыграть в орлянку"""
+    
+    if bet is None:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Укажи ставку! Пример: `!орёл 100`",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    user_id = str(ctx.author.id)
+    
+    # Проверяем наличие пользователя в базе
+    if user_id not in user_data:
+        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(ctx.author), 'items': []}
+    
+    coins = user_data[user_id].get('coins', 0)
+    
+    # Проверка минимальной ставки
+    if bet < CASINO_SETTINGS['min_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Минимальная ставка: {CASINO_SETTINGS['min_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Проверка максимальной ставки
+    if bet > CASINO_SETTINGS['max_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Максимальная ставка: {CASINO_SETTINGS['max_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Проверка баланса
+    if coins < bet:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Недостаточно коинов! У тебя: {coins} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Определяем, на что поставил игрок
+    bet_on = ctx.invoked_with.lower()
+    if bet_on in ['орёл', 'орел']:
+        bet_on = 'орёл'
+    else:
+        bet_on = 'решка'
+    
+    # Бросаем монету
+    result = random.choice(['орёл', 'решка'])
+    
+    # Проверяем выигрыш
+    win = (bet_on == result)
+    
+    if win:
+        winnings = int(bet * CASINO_SETTINGS['coin_flip_mult'])
+        user_data[user_id]['coins'] += winnings - bet  # Добавляем только выигрыш (без ставки)
+        result_text = f"🎉 **ВЫИГРЫШ!** +{winnings - bet} 🪙"
+        color = 0x00ff00
+    else:
+        user_data[user_id]['coins'] -= bet
+        result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙"
+        color = 0xff0000
+    
+    save_data(user_data)
+    
+    # Создаём красивый embed
+    embed = discord.Embed(
+        title=f"🪙 **ОРЛЯНКА**",
+        color=color
+    )
+    
+    embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
+    embed.add_field(name="🎯 Ставка", value=f"{bet_on}", inline=True)
+    embed.add_field(name="📊 Результат", value=f"**{result}**", inline=True)
+    embed.add_field(name="💰 Итог", value=result_text, inline=False)
+    embed.add_field(name="🪙 Новый баланс", value=f"{user_data[user_id]['coins']} 🪙", inline=False)
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !КОСТЬ ==============
+@bot.command(name='кость', aliases=['кубик', 'dice'])
+async def dice_command(ctx, bet: int = None, guess: int = None):
+    """!кость [ставка] [число] - угадай число на кубике (1-6)"""
+    
+    if bet is None or guess is None:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Укажи ставку и число! Пример: `!кость 100 3`",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if guess < 1 or guess > 6:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Число должно быть от 1 до 6!",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    user_id = str(ctx.author.id)
+    
+    if user_id not in user_data:
+        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(ctx.author), 'items': []}
+    
+    coins = user_data[user_id].get('coins', 0)
+    
+    if bet < CASINO_SETTINGS['min_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Минимальная ставка: {CASINO_SETTINGS['min_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if bet > CASINO_SETTINGS['max_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Максимальная ставка: {CASINO_SETTINGS['max_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if coins < bet:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Недостаточно коинов! У тебя: {coins} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Бросаем кубик
+    result = random.randint(1, 6)
+    
+    win = (guess == result)
+    
+    if win:
+        winnings = bet * CASINO_SETTINGS['dice_mult']
+        user_data[user_id]['coins'] += winnings - bet
+        result_text = f"🎉 **ДЖЕКПОТ!** +{winnings - bet} 🪙 (x{CASINO_SETTINGS['dice_mult']})"
+        color = 0x00ff00
+    else:
+        user_data[user_id]['coins'] -= bet
+        result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙"
+        color = 0xff0000
+    
+    save_data(user_data)
+    
+    embed = discord.Embed(
+        title=f"🎲 **КУБИК**",
+        color=color
+    )
+    
+    embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
+    embed.add_field(name="🎯 Ставка", value=f"на {guess}", inline=True)
+    embed.add_field(name="📊 Результат", value=f"**{result}**", inline=True)
+    embed.add_field(name="💰 Итог", value=result_text, inline=False)
+    embed.add_field(name="🪙 Новый баланс", value=f"{user_data[user_id]['coins']} 🪙", inline=False)
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !СЛОТЫ ==============
+@bot.command(name='слоты', aliases=['слот', 'slots', 'slot'])
+async def slots_command(ctx, bet: int = None):
+    """!слоты [ставка] - крути слоты"""
+    
+    if bet is None:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Укажи ставку! Пример: `!слоты 100`",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    user_id = str(ctx.author.id)
+    
+    if user_id not in user_data:
+        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(ctx.author), 'items': []}
+    
+    coins = user_data[user_id].get('coins', 0)
+    
+    if bet < CASINO_SETTINGS['min_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Минимальная ставка: {CASINO_SETTINGS['min_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if bet > CASINO_SETTINGS['max_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Максимальная ставка: {CASINO_SETTINGS['max_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if coins < bet:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Недостаточно коинов! У тебя: {coins} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Символы для слотов
+    symbols = ['🍒', '🍋', '🍊', '🍇', '💎', '7⃣']
+    weights = [50, 30, 15, 7, 3, 1]  # Вероятности выпадения
+    
+    # Крутим слоты
+    slot1 = random.choices(symbols, weights=weights)[0]
+    slot2 = random.choices(symbols, weights=weights)[0]
+    slot3 = random.choices(symbols, weights=weights)[0]
+    
+    # Проверяем выигрыш
+    multiplier = 0
+    if slot1 == slot2 == slot3:
+        multiplier = CASINO_SETTINGS['slot_mult'].get(slot1, 1)
+    
+    if multiplier > 0:
+        winnings = bet * multiplier
+        user_data[user_id]['coins'] += winnings - bet
+        result_text = f"🎉 **ДЖЕКПОТ!** +{winnings - bet} 🪙 (x{multiplier})"
+        color = 0x00ff00
+    else:
+        user_data[user_id]['coins'] -= bet
+        result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙"
+        color = 0xff0000
+    
+    save_data(user_data)
+    
+    embed = discord.Embed(
+        title=f"🎰 **СЛОТЫ**",
+        color=color
+    )
+    
+    embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
+    embed.add_field(name="🎰 Результат", value=f"`{slot1}` `{slot2}` `{slot3}`", inline=False)
+    embed.add_field(name="💰 Итог", value=result_text, inline=False)
+    embed.add_field(name="🪙 Новый баланс", value=f"{user_data[user_id]['coins']} 🪙", inline=False)
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !РУЛЕТКА ==============
+@bot.command(name='рулетка', aliases=['roulette'])
+async def roulette_command(ctx, color: str = None, bet: int = None):
+    """!рулетка [цвет] [ставка] - ставка на красное/черное"""
+    
+    if color is None or bet is None:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Укажи цвет и ставку! Пример: `!рулетка красное 100`",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    color = color.lower()
+    if color not in ['красное', 'черное', 'красный', 'черный', 'red', 'black']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Цвет должен быть 'красное' или 'черное'",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Нормализуем цвет
+    if color in ['красное', 'красный', 'red']:
+        bet_color = 'красное'
+    else:
+        bet_color = 'черное'
+    
+    user_id = str(ctx.author.id)
+    
+    if user_id not in user_data:
+        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(ctx.author), 'items': []}
+    
+    coins = user_data[user_id].get('coins', 0)
+    
+    if bet < CASINO_SETTINGS['min_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Минимальная ставка: {CASINO_SETTINGS['min_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if bet > CASINO_SETTINGS['max_bet']:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Максимальная ставка: {CASINO_SETTINGS['max_bet']} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    if coins < bet:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Недостаточно коинов! У тебя: {coins} 🪙",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Крутим рулетку (0 - зеленый, 1-7 - красные, 8-14 - черные)
+    number = random.randint(0, 14)
+    
+    if number == 0:
+        result_color = 'зеленое'
+        win = False
+    elif 1 <= number <= 7:
+        result_color = 'красное'
+        win = (bet_color == 'красное')
+    else:
+        result_color = 'черное'
+        win = (bet_color == 'черное')
+    
+    if win:
+        winnings = bet * 2
+        user_data[user_id]['coins'] += winnings - bet
+        result_text = f"🎉 **ВЫИГРЫШ!** +{winnings - bet} 🪙 (x2)"
+        color_embed = 0x00ff00
+    else:
+        user_data[user_id]['coins'] -= bet
+        if result_color == 'зеленое':
+            result_text = f"💚 **ЗЕЛЕНОЕ!** -{bet} 🪙 (проигрыш)"
+        else:
+            result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙"
+        color_embed = 0xff0000
+    
+    save_data(user_data)
+    
+    embed = discord.Embed(
+        title=f"🎡 **РУЛЕТКА**",
+        color=color_embed
+    )
+    
+    embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
+    embed.add_field(name="🎯 Ставка", value=f"{bet_color}", inline=True)
+    embed.add_field(name="📊 Результат", value=f"**{result_color}** (число {number})", inline=True)
+    embed.add_field(name="💰 Итог", value=result_text, inline=False)
+    embed.add_field(name="🪙 Новый баланс", value=f"{user_data[user_id]['coins']} 🪙", inline=False)
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !БОНУС ==============
+@bot.command(name='бонус', aliases=['bonus', 'daily'])
+async def bonus_command(ctx):
+    """!бонус - получить ежедневный бонус (раз в 24 часа)"""
+    
+    user_id = str(ctx.author.id)
+    
+    if user_id not in user_data:
+        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(ctx.author), 'items': [], 'last_bonus': 0}
+    
+    current_time = time.time()
+    last_bonus = user_data[user_id].get('last_bonus', 0)
+    
+    # Проверяем, прошло ли 24 часа
+    if current_time - last_bonus < 86400:  # 24 часа в секундах
+        time_left = 86400 - (current_time - last_bonus)
+        hours = int(time_left // 3600)
+        minutes = int((time_left % 3600) // 60)
+        
+        embed = discord.Embed(
+            title=f"⏰ **БОНУС НЕДОСТУПЕН**",
+            description=f"Следующий бонус через {hours} ч {minutes} мин",
+            color=0xffaa00
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    # Рассчитываем бонус (случайный)
+    bonus = random.randint(50, 200)
+    
+    user_data[user_id]['coins'] += bonus
+    user_data[user_id]['total_coins_earned'] += bonus
+    user_data[user_id]['last_bonus'] = current_time
+    save_data(user_data)
+    
+    embed = discord.Embed(
+        title=f"🎁 **ЕЖЕДНЕВНЫЙ БОНУС**",
+        description=f"{ctx.author.mention}, ты получил **{bonus}** 🪙!",
+        color=0x00ff00
+    )
+    embed.add_field(name="💰 Текущий баланс", value=f"{user_data[user_id]['coins']} 🪙", inline=False)
+    embed.add_field(name="⏰ Следующий бонус", value="через 24 часа", inline=False)
+    
+    await ctx.send(embed=embed)
+
 # ============== КОМАНДА !ВЫДАТЬРОЛЬ ==============
 @bot.command(name='выдатьроль', aliases=['giverole', 'temprole'])
 @commands.has_permissions(administrator=True)
@@ -3245,6 +3726,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
