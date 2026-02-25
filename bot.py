@@ -4,13 +4,8 @@ import json
 import os
 import random
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta  # ЭТО ВАЖНО!
 import math
-import time
-
-from keep_alive import keep_alive
-
-from datetime import datetime, timedelta
 import time
 
 # ============== НАСТРОЙКИ ==============
@@ -4477,6 +4472,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
