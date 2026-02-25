@@ -27,6 +27,10 @@ REPLACEMENT_FILE = 'replacement_config.json'
 WARNS_FILE = 'warns_data.json'
 MUTES_FILE = 'mutes_data.json'
 
+# ============== СИСТЕМА ВРЕМЕННЫХ РОЛЕЙ ==============
+temp_roles = {}
+voice_tracking = {}  # ЭТО ДОЛЖНО БЫТЬ!
+
 # Настройки уровней
 LEVEL_UP_BASE = 100
 LEVEL_UP_MULTIPLIER = 1.5
@@ -3962,6 +3966,159 @@ async def remove_role_command(ctx, item_id: str):
         )
         await ctx.send(embed=embed)
 
+@bot.event
+async def on_voice_state_update(member, before, after):
+    """Отслеживает вход/выход из голосовых каналов"""
+    if member.bot:
+        return
+    
+    user_id = str(member.id)
+    current_time = datetime.now()
+    
+    # Пользователь зашёл в голосовой канал
+    if before.channel is None and after.channel is not None:
+        voice_tracking[user_id] = {
+            "channel_id": after.channel.id,
+            "join_time": current_time,
+            "total_earned": 0
+        }
+        print(f"🔊 {member.display_name} зашёл в {after.channel.name}")
+    
+    # Пользователь вышел из голосового канала
+    elif before.channel is not None and after.channel is None:
+        if user_id in voice_tracking:
+            join_time = voice_tracking[user_id]["join_time"]
+            leave_time = current_time
+            minutes_voice = (leave_time - join_time).total_seconds() / 60
+            
+            if minutes_voice >= 1:
+                # Получаем бустер пользователя
+                boost_multiplier = get_user_boost(member)
+                xp_earned = int(minutes_voice * XP_PER_VOICE_MINUTE * boost_multiplier)
+                
+                # Инициализируем данные пользователя если нужно
+                if user_id not in user_data:
+                    user_data[user_id] = {
+                        'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
+                        'username': str(member), 'messages': 0, 'voice_time': 0,
+                        'coins': 0, 'total_coins_earned': 0, 'items': [],
+                        'last_message_time': datetime.now().isoformat()
+                    }
+                
+                # Запоминаем старый уровень
+                old_level = user_data[user_id]['level']
+                
+                # Начисляем опыт
+                user_data[user_id]['voice_xp'] += xp_earned
+                user_data[user_id]['voice_time'] += int(minutes_voice)
+                
+                # Пересчитываем общий опыт
+                total_xp = user_data[user_id]['message_xp'] + user_data[user_id]['voice_xp']
+                user_data[user_id]['total_xp'] = total_xp
+                
+                # Проверяем повышение уровня
+                new_level, current_xp, xp_needed = calculate_level(total_xp)
+                
+                if new_level > old_level:
+                    user_data[user_id]['level'] = new_level
+                    user_data[user_id]['xp'] = current_xp
+                    
+                    # Уведомление о повышении уровня
+                    try:
+                        channel = member.guild.system_channel or member.guild.text_channels[0]
+                        embed = discord.Embed(
+                            title=f"🔴 **ПОВЫШЕНИЕ УРОВНЯ В ВОЙСЕ!**", 
+                            description=f"{member.mention} достиг **{new_level}** уровня!\nПолучено **{xp_earned}** XP",
+                            color=0xff0000
+                        )
+                        await channel.send(embed=embed)
+                    except:
+                        pass
+                
+                print(f"🔊 {member.display_name} получил {xp_earned} XP за {int(minutes_voice)} минут в войсе (бустер x{boost_multiplier})")
+                save_data(user_data)
+            
+            # Удаляем из отслеживания
+            del voice_tracking[user_id]
+    
+    # Пользователь переключил канал
+    elif before.channel is not None and after.channel is not None and before.channel != after.channel:
+        if user_id in voice_tracking:
+            voice_tracking[user_id]["channel_id"] = after.channel.id
+            print(f"🔊 {member.display_name} перешёл в {after.channel.name}")
+async def voice_xp_loop():
+    """Начисляет опыт каждую минуту за нахождение в войсе"""
+    await bot.wait_until_ready()
+    
+    while not bot.is_closed():
+        try:
+            current_time = datetime.now()
+            
+            for user_id, data in list(voice_tracking.items()):
+                join_time = data["join_time"]
+                minutes_passed = int((current_time - join_time).total_seconds() / 60)
+                
+                # Начисляем опыт за каждую полную минуту
+                if minutes_passed > data["total_earned"]:
+                    # Находим пользователя на сервере
+                    member = None
+                    for guild in bot.guilds:
+                        member = guild.get_member(int(user_id))
+                        if member:
+                            break
+                    
+                    if member:
+                        # Получаем бустер
+                        boost_multiplier = get_user_boost(member)
+                        xp_gained = int(XP_PER_VOICE_MINUTE * boost_multiplier)
+                        
+                        # Инициализируем данные
+                        if user_id not in user_data:
+                            try:
+                                username = str(member) if member else "Unknown"
+                            except:
+                                username = "Unknown"
+                            
+                            user_data[user_id] = {
+                                'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
+                                'username': username, 'messages': 0, 'voice_time': 0,
+                                'coins': 0, 'total_coins_earned': 0, 'items': [],
+                                'last_message_time': datetime.now().isoformat()
+                            }
+                        
+                        old_level = user_data[user_id]['level']
+                        
+                        # Начисляем опыт
+                        user_data[user_id]['voice_xp'] += xp_gained
+                        user_data[user_id]['voice_time'] += 1
+                        
+                        # Пересчитываем общий опыт
+                        total_xp = user_data[user_id]['message_xp'] + user_data[user_id]['voice_xp']
+                        user_data[user_id]['total_xp'] = total_xp
+                        
+                        # Проверяем уровень
+                        new_level, current_xp, xp_needed = calculate_level(total_xp)
+                        
+                        if new_level > old_level:
+                            user_data[user_id]['level'] = new_level
+                            user_data[user_id]['xp'] = current_xp
+                        
+                        # Обновляем счётчик начислений
+                        voice_tracking[user_id]["total_earned"] = minutes_passed
+                        save_data(user_data)
+                        
+                        print(f"⏱️ {member.name} +{xp_gained} XP за минуту в войсе")
+            
+        except Exception as e:
+            print(f"❌ Ошибка в voice_xp_loop: {e}")
+        
+        await asyncio.sleep(60)
+        
+@bot.event
+async def setup_hook():
+    bot.loop.create_task(voice_xp_loop())
+    print("✅ Фоновая задача для войса запущена!")
+    
 # ============== ЗАПУСК ==============
 if __name__ == "__main__":
     token = os.getenv('DISCORD_TOKEN')
@@ -3971,6 +4128,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
