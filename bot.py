@@ -3523,6 +3523,79 @@ async def set_voice_xp_command(ctx, xp_per_minute: int):
     )
     await ctx.send(embed=embed)
 
+@bot.command(name='сброситьоборот', aliases=['resetcoins', 'сброситькоины'])
+@commands.has_permissions(administrator=True)
+async def reset_coins_command(ctx, member: discord.Member = None):
+    """
+    !сброситьоборот @пользователь - сбросить оборот коинов пользователя
+    !сброситьоборот all - сбросить оборот ВСЕХ пользователей
+    """
+    
+    # Сброс всех пользователей
+    if member is None and ctx.message.content.endswith('all'):
+        # Запрашиваем подтверждение
+        confirm_msg = await ctx.send("⚠️ **ВНИМАНИЕ!** Вы уверены, что хотите сбросить **ОБОРОТ КОИНОВ** всех пользователей? Это действие нельзя отменить!\n\nНапишите `да` в течение 30 секунд для подтверждения.")
+        
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'да'
+        
+        try:
+            await bot.wait_for('message', timeout=30.0, check=check)
+        except asyncio.TimeoutError:
+            await ctx.send("❌ Операция отменена (таймаут).")
+            return
+        
+        total_reset = 0
+        for user_id in user_data:
+            if 'total_coins_earned' in user_data[user_id]:
+                total_reset += user_data[user_id]['total_coins_earned']
+                user_data[user_id]['total_coins_earned'] = 0
+        
+        save_data(user_data)
+        
+        embed = discord.Embed(
+            title=f"💰 **ОБОРОТ СБРОШЕН**",
+            description=f"Оборот коинов **ВСЕХ** пользователей сброшен!\nВсего сброшено: **{total_reset}** 🪙",
+            color=0x00ff00
+        )
+        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
+        await ctx.send(embed=embed)
+        return
+    
+    # Сброс конкретного пользователя
+    if member is None:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Укажи пользователя: `!сброситьоборот @пользователь`\nИли для всех: `!сброситьоборот all`",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    user_id = str(member.id)
+    
+    if user_id not in user_data:
+        embed = discord.Embed(
+            title=f"ℹ️ **НЕТ ДАННЫХ**",
+            description=f"У {member.mention} нет данных в системе",
+            color=0xffaa00
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    old_oborot = user_data[user_id].get('total_coins_earned', 0)
+    user_data[user_id]['total_coins_earned'] = 0
+    save_data(user_data)
+    
+    embed = discord.Embed(
+        title=f"💰 **ОБОРОТ СБРОШЕН**",
+        description=f"У {member.mention} сброшен оборот коинов",
+        color=0x00ff00
+    )
+    embed.add_field(name="📊 Было сброшено", value=f"**{old_oborot}** 🪙", inline=True)
+    embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
+    await ctx.send(embed=embed)
+
 # ============== АДМИН-КОМАНДЫ ДЛЯ МАГАЗИНА ==============
 
 @bot.command(name='add_item')
@@ -3786,6 +3859,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
