@@ -547,18 +547,66 @@ async def voice_xp_loop():
                         new_level, current_xp, xp_needed = calculate_level(total_xp)
                         
                         if new_level > old_level:
-                            user_data[user_id]['level'] = new_level
-                            user_data[user_id]['xp'] = current_xp
-                        
-                        voice_tracking[user_id]["total_earned"] = minutes_passed
-                        save_data(user_data)
-                        
-                        print(f"⏱️ {member.name} +{xp_gained} XP за минуту в войсе")
-            
-        except Exception as e:
-            print(f"❌ Ошибка в voice_xp_loop: {e}")
+    user_data[user_id]['level'] = new_level
+    user_data[user_id]['xp'] = current_xp
+    
+    coins_reward = get_level_reward(new_level)
+    if coins_reward > 0:
+        user_data[user_id]['coins'] += coins_reward
+        user_data[user_id]['total_coins_earned'] += coins_reward
+    
+    # ===== ПРОВЕРКА И ВЫДАЧА РОЛЕЙ ЗА УРОВНИ =====
+    level_role_text = ""
+    if new_level in LEVEL_ROLES:
+        role_id = LEVEL_ROLES[new_level]
+        role = message.guild.get_role(role_id)
         
-        await asyncio.sleep(60)
+        if role and role not in message.author.roles:
+            try:
+                await message.author.add_roles(role, reason=f"Достигнут {new_level} уровень")
+                role_name = LEVEL_ROLES_NAMES.get(new_level, f"Уровень {new_level}")
+                level_role_text = f"\n🎖️ **Новая роль:** {role.mention}"
+                
+                # Отдельное сообщение о новой роли
+                role_embed = discord.Embed(
+                    title=f"🎉 **НОВАЯ РОЛЬ!**",
+                    description=f"{message.author.mention}, ты получил новую роль за достижение **{new_level}** уровня!",
+                    color=0xffd700
+                )
+                role_embed.add_field(name="🎭 Роль", value=f"{role.mention} - {role_name}", inline=True)
+                role_embed.add_field(name="📊 Уровень", value=f"**{new_level}**", inline=True)
+                role_embed.set_thumbnail(url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
+                
+                await message.channel.send(embed=role_embed)
+                
+            except Exception as e:
+                print(f"❌ Ошибка выдачи роли: {e}")
+    
+    embed = discord.Embed(title=f"🔴 **ПОВЫШЕНИЕ УРОВНЯ!** 🔴", color=0xff0000)
+    embed.set_author(name=message.author.display_name, icon_url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
+    
+    level_text = f"📊 **Новый уровень:** `{old_level}` → `{new_level}` ⬆️"
+    xp_text = f"✨ **Всего опыта:** `{total_xp:,}` XP"
+    
+    if boost_multiplier > 1.0:
+        xp_text += f"\n⚡ **Бустер:** x{boost_multiplier}"
+    
+    # Добавляем информацию о полученной роли
+    if level_role_text:
+        xp_text += level_role_text
+    
+    embed.add_field(name="📊 Прогресс", value=level_text, inline=False)
+    embed.add_field(name="✨ Достижение", value=xp_text, inline=True)
+    
+    if coins_reward > 0:
+        embed.add_field(name="🎁 **НАГРАДА**", value=f"🪙 **+{coins_reward}** коинов!", inline=True)
+    
+    phrases = ["Так держать! 🚀", "Ты становишься легендой! ⭐", "Вперёд к новым вершинам! ⛰️", "Невероятный прогресс! 🌟", "Ты в огне! 🔥"]
+    embed.set_footer(text=f"💫 {random.choice(phrases)}")
+    embed.set_thumbnail(url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
+    
+    level_up_msg = await message.channel.send(embed=embed)
+    await level_up_msg.delete(delay=10)
 
 # ============== ФУНКЦИИ ДЛЯ ПРИГЛАШЕНИЙ ==============
 async def check_invite_roles(guild, member):
@@ -3057,4 +3105,5 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
