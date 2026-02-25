@@ -598,7 +598,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name=f"{users_in_system} пользователей в системе | !ур | !топы | !бал"
+           f" !помощь - список команд"
         )
     )
 
@@ -3171,7 +3171,7 @@ async def bonus_command(ctx):
         return
     
     # Рассчитываем бонус (случайный)
-    bonus = random.randint(50, 200)
+    bonus = random.randint(30, 50)
     
     user_data[user_id]['coins'] += bonus
     user_data[user_id]['total_coins_earned'] += bonus
@@ -3786,6 +3786,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
