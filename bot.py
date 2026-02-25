@@ -598,7 +598,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-           f" !помощь - список команд"
+           name=f" !помощь - список команд"
         )
     )
 
@@ -3786,6 +3786,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
