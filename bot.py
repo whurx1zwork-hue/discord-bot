@@ -10,6 +10,9 @@ import time
 
 from keep_alive import keep_alive
 
+from datetime import datetime, timedelta
+import time
+
 # ============== НАСТРОЙКИ ==============
 intents = discord.Intents.default()
 intents.message_content = True
@@ -4474,6 +4477,7 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
 
