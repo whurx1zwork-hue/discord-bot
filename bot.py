@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 import math
 import time
 
+from keep_alive import keep_alive
+
 # ============== НАСТРОЙКИ ==============
 intents = discord.Intents.default()
 intents.message_content = True
@@ -2973,4 +2975,5 @@ if __name__ == "__main__":
         print("❌ ОШИБКА: Токен не найден! Добавь DISCORD_TOKEN в переменные окружения Railway")
     else:
         print(f"✅ Бот запускается...")
+
         bot.run(token)
