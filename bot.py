@@ -56,6 +56,31 @@ COINS_PER_LEVEL_UP = {
     100: 1300,
 }
 
+# ============== ID РОЛЕЙ ЗА УРОВНИ ==============
+LEVEL_ROLES = {
+    1: 1476345391380303873,
+    5: 1476345847946940491,
+    10: 1476346494096511160,
+    20: 1476346660815634593,
+    35: 1476346975984029726,
+    50: 1476347295149854794,
+    75: 1476347490725793863,
+    90: 1476347650344358018,
+    100: 1476347841210355752
+}
+
+LEVEL_ROLES_NAMES = {
+    1: "👶 Новичок",
+    5: "🌱 Активный",
+    10: "🌿 Опытный",
+    20: "🔥 Ветеран",
+    35: "⚡ Профи",
+    50: "👑 Легенда",
+    75: "🌟 Герой",
+    90: "💫 Миф",
+    100: "🏆 Бог чата"
+}
+
 # ============== НАСТРОЙКИ ЗАМЕНЫ РОЛЕЙ ==============
 WHITELISTED_ROLES = []
 REPLACEMENT_ROLES = []
@@ -68,7 +93,7 @@ ACTION_ON_MAX_WARNS = "mute"
 INVITE_ROLES = {
     3: 1476307246597148883,   # Вербовщик I - 3 приглашения
     5: 1476307365945938035,   # Вербовщик II - 5 приглашений
-    10: 1476307524784492604   # Вербовщик III - добавь ID
+    10: 1476307524784492604   # Вербовщик III - 10 приглашений
 }
 
 # ============== НАСТРОЙКИ КАЗИНО ==============
@@ -673,6 +698,34 @@ async def on_message(message):
             user_data[user_id]['coins'] += coins_reward
             user_data[user_id]['total_coins_earned'] += coins_reward
         
+        # ===== ПРОВЕРКА И ВЫДАЧА РОЛЕЙ ЗА УРОВНИ =====
+        level_role_text = ""
+        
+        if new_level in LEVEL_ROLES:
+            role_id = LEVEL_ROLES[new_level]
+            role = message.guild.get_role(role_id)
+            
+            if role and role not in message.author.roles:
+                try:
+                    await message.author.add_roles(role, reason=f"Достигнут {new_level} уровень")
+                    role_name = LEVEL_ROLES_NAMES.get(new_level, f"Уровень {new_level}")
+                    level_role_text = f"\n🎖️ **Новая роль:** {role.mention}"
+                    
+                    # Отдельное сообщение о новой роли
+                    role_embed = discord.Embed(
+                        title=f"🎉 **НОВАЯ РОЛЬ!**",
+                        description=f"{message.author.mention}, ты получил новую роль за достижение **{new_level}** уровня!",
+                        color=0xffd700
+                    )
+                    role_embed.add_field(name="🎭 Роль", value=f"{role.mention} - {role_name}", inline=True)
+                    role_embed.add_field(name="📊 Уровень", value=f"**{new_level}**", inline=True)
+                    role_embed.set_thumbnail(url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
+                    
+                    await message.channel.send(embed=role_embed)
+                    
+                except Exception as e:
+                    print(f"❌ Ошибка выдачи роли: {e}")
+        
         embed = discord.Embed(title=f"🔴 **ПОВЫШЕНИЕ УРОВНЯ!** 🔴", color=0xff0000)
         embed.set_author(name=message.author.display_name, icon_url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
         
@@ -681,6 +734,10 @@ async def on_message(message):
         
         if boost_multiplier > 1.0:
             xp_text += f"\n⚡ **Бустер:** x{boost_multiplier}"
+        
+        # Добавляем информацию о полученной роли
+        if level_role_text:
+            xp_text += level_role_text
         
         embed.add_field(name="📊 Прогресс", value=level_text, inline=False)
         embed.add_field(name="✨ Достижение", value=xp_text, inline=True)
