@@ -567,6 +567,7 @@ async def auto_mute(ctx, member, reason):
         pass
 
 # ============== СОБЫТИЯ ==============
+# ============== ИСПРАВЛЕННАЯ ФУНКЦИЯ on_ready ==============
 @bot.event
 async def on_ready():
     print(f'✅ Бот {bot.user} успешно запущен!')
@@ -578,13 +579,26 @@ async def on_ready():
     print(f'✅ СИСТЕМА ПРЕДУПРЕЖДЕНИЙ АКТИВНА! Всего предупреждений: {sum(len(warns) for warns in warns_data.values())}')
     print(f'✅ СИСТЕМА МУТОВ АКТИВНА! Активных мутов: {len(active_mutes)}')
     
+    # Подсчёт реального количества пользователей на сервере
+    total_members = 0
+    for guild in bot.guilds:
+        total_members += guild.member_count
+    
+    # Подсчёт пользователей в системе уровней
+    users_in_system = len(user_data)
+    
+    print(f'✅ Всего серверов: {len(bot.guilds)}')
+    print(f'✅ Всего пользователей на серверах: {total_members}')
+    print(f'✅ Пользователей в системе уровней: {users_in_system}')
+    
     temp_roles_check.start()
     mutes_check.start()
     
+    # Устанавливаем статус с реальным количеством
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name=f"{len(user_data)} пользователей | !ур | !топы | !бал"
+            name=f"{users_in_system} пользователей в системе | !ур | !топы | !бал"
         )
     )
 
@@ -2977,5 +2991,6 @@ if __name__ == "__main__":
         print(f"✅ Бот запускается...")
         keep_alive()  # Запускаем веб-сервер для поддержания активности
         bot.run(token)
+
 
 
