@@ -835,9 +835,13 @@ async def on_member_join(member):
             print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
         
         await asyncio.sleep(2)
-        
-        invites_after = await guild.invites()
-        print(f"📊 Приглашений ПОСЛЕ: {len(invites_after)}")
+print("⏰ Прошло 2 секунды, получаем приглашения после...")
+
+invites_after = await guild.invites()
+print(f"📊 Приглашений ПОСЛЕ: {len(invites_after)}")
+
+for new_invite in invites_after:
+    print(f"  • Код: {new_invite.code}, Создатель: {new_invite.inviter.name}, Использовано: {new_invite.uses}")
         
         # Ищем изменения
         found = False
@@ -3268,6 +3272,7 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
 
 
