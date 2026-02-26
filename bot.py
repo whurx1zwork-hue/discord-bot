@@ -825,23 +825,27 @@ async def on_member_join(member):
             print("❌ У БОТА НЕТ ПРАВА 'Управлять сервером'! Без этого приглашения не будут отслеживаться!")
             return
         
-        # Получаем приглашения
-        print("📥 Получаем список приглашений...")
+        # Получаем приглашения ДО
+        print("📥 Получаем список приглашений ДО...")
         invites_before = await guild.invites()
         print(f"📊 Приглашений ДО: {len(invites_before)}")
         
-        # Выводим все приглашения для отладки
+        # Выводим все приглашения до
         for inv in invites_before:
             print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
         
+        # Ждём 2 секунды
+        print("⏰ Ждём 2 секунды...")
         await asyncio.sleep(2)
-print("⏰ Прошло 2 секунды, получаем приглашения после...")
-
-invites_after = await guild.invites()
-print(f"📊 Приглашений ПОСЛЕ: {len(invites_after)}")
-
-for new_invite in invites_after:
-    print(f"  • Код: {new_invite.code}, Создатель: {new_invite.inviter.name}, Использовано: {new_invite.uses}")
+        
+        # Получаем приглашения ПОСЛЕ
+        print("📥 Получаем список приглашений ПОСЛЕ...")
+        invites_after = await guild.invites()
+        print(f"📊 Приглашений ПОСЛЕ: {len(invites_after)}")
+        
+        # Выводим все приглашения после
+        for inv in invites_after:
+            print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
         
         # Ищем изменения
         found = False
@@ -853,8 +857,39 @@ for new_invite in invites_after:
                         print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ: {inviter.name} (ID: {inviter.id})")
                         print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
                         
-                        # Здесь твой код для сохранения...
-                        # (остальная часть функции)
+                        if inviter:
+                            inviter_id = str(inviter.id)
+                            
+                            if inviter_id not in invites_data:
+                                invites_data[inviter_id] = {
+                                    'username': str(inviter),
+                                    'invites': 0,
+                                    'joined_users': []
+                                }
+                            
+                            invites_data[inviter_id]['invites'] += 1
+                            invites_data[inviter_id]['joined_users'].append({
+                                'user_id': member.id,
+                                'username': str(member),
+                                'joined_at': datetime.now().isoformat()
+                            })
+                            
+                            await save_invites()
+                            print(f"✅ Приглашение засчитано! Теперь у {inviter.name} {invites_data[inviter_id]['invites']} приглашений")
+                            
+                            await check_invite_roles(member.guild, inviter)
+                            
+                            try:
+                                embed = discord.Embed(
+                                    title=f"🎉 **НОВОЕ ПРИГЛАШЕНИЕ**",
+                                    description=f"Пользователь **{member.name}** присоединился по вашему приглашению!",
+                                    color=0x00ff00
+                                )
+                                embed.add_field(name="📊 Всего приглашений", value=f"**{invites_data[inviter_id]['invites']}**", inline=True)
+                                await inviter.send(embed=embed)
+                                print(f"✅ Уведомление отправлено {inviter.name}")
+                            except Exception as e:
+                                print(f"❌ Не удалось отправить уведомление: {e}")
                         
                         found = True
                         break
@@ -870,7 +905,6 @@ for new_invite in invites_after:
         print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в on_member_join: {e}")
         import traceback
         traceback.print_exc()
-
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
@@ -3272,6 +3306,7 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
 
 
