@@ -721,7 +721,7 @@ async def on_message(message):
                     role_embed.add_field(name="📊 Уровень", value=f"**{new_level}**", inline=True)
                     role_embed.set_thumbnail(url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
                     
-                    await message.channel.send(embed=role_embed)
+                    await message.channel.send(embed=role_embed, delete_after=15)
                     
                 except Exception as e:
                     print(f"❌ Ошибка выдачи роли: {e}")
@@ -749,8 +749,7 @@ async def on_message(message):
         embed.set_footer(text=f"💫 {random.choice(phrases)}")
         embed.set_thumbnail(url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
         
-        level_up_msg = await message.channel.send(embed=embed)
-        await level_up_msg.delete(delay=10)
+        level_up_msg = await message.channel.send(embed=embed, delete_after=15)
     
     save_data(user_data)
     await bot.process_commands(message)
@@ -3114,3 +3113,4 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
