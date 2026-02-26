@@ -8,7 +8,10 @@ from datetime import datetime, timedelta
 import math
 import time
 from database import Database
+
+# ============== ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ==============
 db = Database()
+
 # ============== НАСТРОЙКИ ==============
 intents = discord.Intents.default()
 intents.message_content = True
@@ -17,15 +20,19 @@ intents.voice_states = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Файлы для данных
-DATA_FILE = 'levels_data.json'
-SHOP_FILE = 'shop_data.json'
-BOOST_FILE = 'boost_data.json'
-TEMP_ROLES_FILE = 'temp_roles.json'
-REPLACEMENT_FILE = 'replacement_config.json'
-WARNS_FILE = 'warns_data.json'
-MUTES_FILE = 'mutes_data.json'
-INVITES_FILE = 'invites_data.json'
+# ============== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ==============
+user_data = {}
+shop_data = {}
+BOOST_ROLES = {}
+temp_roles = {}
+warns_data = {}
+active_mutes = {}
+invites_data = {}
+voice_tracking = {}
+user_boost_cache = {}
+WHITELISTED_ROLES = []
+REPLACEMENT_ROLES = []
+CACHE_TIME = 30
 
 # Настройки уровней
 LEVEL_UP_BASE = 100
@@ -82,20 +89,16 @@ LEVEL_ROLES_NAMES = {
     100: "🏆 Бог чата"
 }
 
-# ============== НАСТРОЙКИ ЗАМЕНЫ РОЛЕЙ ==============
-WHITELISTED_ROLES = []
-REPLACEMENT_ROLES = []
-
-# ============== НАСТРОЙКИ ДЛЯ СИСТЕМЫ НАКАЗАНИЙ ==============
-MAX_WARNS = 3
-ACTION_ON_MAX_WARNS = "mute"
-
 # ============== ID РОЛЕЙ ВЕРБОВЩИКА ==============
 INVITE_ROLES = {
-    3: 1476307246597148883,   # Вербовщик I - 3 приглашения
-    5: 1476307365945938035,   # Вербовщик II - 5 приглашений
-    10: 1476307524784492604   # Вербовщик III - 10 приглашений
+    3: 1476307246597148883,
+    5: 1476307365945938035,
+    10: 1476307524784492604
 }
+
+# ============== ID РОЛЕЙ БАН/ЧСС ==============
+BAN_ROLE_ID = 1475987838897098794
+CHSS_ROLE_ID = 1475987685985226873
 
 # ============== НАСТРОЙКИ КАЗИНО ==============
 CASINO_SETTINGS = {
@@ -113,158 +116,57 @@ CASINO_SETTINGS = {
     }
 }
 
-# ============== Цвета и эмодзи ==============
-RED_COLOR = 0xff0000
-EMOJIS = {
-    'level': '📊', 'xp': '✨', 'message': '💬', 'voice': '🎤',
-    'time': '⏱️', 'crown': '👑', 'medal1': '🥇', 'medal2': '🥈',
-    'medal3': '🥉', 'progress_full': '🟥', 'progress_empty': '⬛',
-    'up': '⬆️', 'down': '⬇️', 'fire': '🔥', 'boost': '⚡',
-    'chart': '📈', 'separator': '▬', 'star': '⭐', 'target': '🎯',
-    'coin': '🪙', 'shop': '🏪', 'cart': '🛒', 'box': '📦', 'money': '💰',
-    'role': '👑', 'clock': '⏰'
-}
+# ============== НАСТРОЙКИ ДЛЯ СИСТЕМЫ НАКАЗАНИЙ ==============
+MAX_WARNS = 3
+ACTION_ON_MAX_WARNS = "mute"
 
-# ============== СИСТЕМА БУСТЕРОВ ==============
-BOOST_ROLES = {}
-user_boost_cache = {}
-CACHE_TIME = 30
+# ============== ФУНКЦИИ СОХРАНЕНИЯ В БД ==============
 
-# ============== СИСТЕМА ВРЕМЕННЫХ РОЛЕЙ ==============
-temp_roles = {}
-voice_tracking = {}
-
-# ============== СИСТЕМА ПРЕДУПРЕЖДЕНИЙ ==============
-warns_data = {}
-
-# ============== СИСТЕМА МУТОВ ==============
-active_mutes = {}
-
-# ============== СИСТЕМА ПРИГЛАШЕНИЙ ==============
-invites_data = {}
-
-# ============== ФУНКЦИИ РАБОТЫ С ФАЙЛАМИ ==============
-def load_data():
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
-
-def save_data(data):
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-def load_shop():
+async def save_data(data):
     try:
-        if os.path.exists(SHOP_FILE):
-            with open(SHOP_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                print(f"✅ Магазин загружен: {len(data)} товаров из {SHOP_FILE}")
-                return data
-        else:
-            print(f"ℹ️ Файл {SHOP_FILE} не найден, создаем новый магазин")
-            return {}
-    except Exception as e:
-        print(f"❌ ОШИБКА загрузки магазина: {e}")
-        return {}
-
-def save_shop(shop):
-    try:
-        with open(SHOP_FILE, 'w', encoding='utf-8') as f:
-            json.dump(shop, f, indent=4, ensure_ascii=False)
-        print(f"✅ Магазин сохранен: {len(shop)} товаров в {SHOP_FILE}")
+        for user_id, user_data_item in data.items():
+            await db.save_level(user_id, user_data_item)
+        print(f"✅ Сохранено {len(data)} пользователей в БД")
         return True
     except Exception as e:
-        print(f"❌ ОШИБКА сохранения магазина: {e}")
+        print(f"❌ Ошибка сохранения уровней: {e}")
         return False
 
-def load_boosts():
-    global BOOST_ROLES
-    if os.path.exists(BOOST_FILE):
-        with open(BOOST_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            BOOST_ROLES = {int(k): v for k, v in data.items()}
-    return BOOST_ROLES
+async def save_shop(shop):
+    try:
+        await db.save_shop(shop)
+        print(f"✅ Сохранено {len(shop)} товаров в БД")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка сохранения магазина: {e}")
+        return False
 
-def save_boosts():
-    data = {str(k): v for k, v in BOOST_ROLES.items()}
-    with open(BOOST_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+async def save_temp_roles():
+    try:
+        await db.save_temp_roles(temp_roles)
+        print(f"✅ Сохранено временных ролей в БД")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка сохранения временных ролей: {e}")
+        return False
 
-def load_temp_roles():
-    global temp_roles
-    if os.path.exists(TEMP_ROLES_FILE):
-        with open(TEMP_ROLES_FILE, 'r', encoding='utf-8') as f:
-            temp_roles = json.load(f)
-    return temp_roles
+async def save_invites():
+    try:
+        await db.save_invites(invites_data)
+        print(f"✅ Сохранено {len(invites_data)} записей приглашений в БД")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка сохранения приглашений: {e}")
+        return False
 
-def save_temp_roles():
-    with open(TEMP_ROLES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(temp_roles, f, indent=4, ensure_ascii=False)
-
-def load_warns():
-    global warns_data
-    if os.path.exists(WARNS_FILE):
-        with open(WARNS_FILE, 'r', encoding='utf-8') as f:
-            warns_data = json.load(f)
-    return warns_data
-
-def save_warns():
-    with open(WARNS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(warns_data, f, indent=4, ensure_ascii=False)
-
-def load_mutes():
-    global active_mutes
-    if os.path.exists(MUTES_FILE):
-        with open(MUTES_FILE, 'r', encoding='utf-8') as f:
-            active_mutes = json.load(f)
-    return active_mutes
-
-def save_mutes():
-    with open(MUTES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(active_mutes, f, indent=4, ensure_ascii=False)
-
-def load_invites():
-    global invites_data
-    if os.path.exists(INVITES_FILE):
-        with open(INVITES_FILE, 'r', encoding='utf-8') as f:
-            invites_data = json.load(f)
-    return invites_data
-
-def save_invites():
-    with open(INVITES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(invites_data, f, indent=4, ensure_ascii=False)
-
-def load_replacement_config():
-    global WHITELISTED_ROLES, REPLACEMENT_ROLES
-    if os.path.exists(REPLACEMENT_FILE):
-        try:
-            with open(REPLACEMENT_FILE, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                WHITELISTED_ROLES = config.get('whitelist', [])
-                REPLACEMENT_ROLES = config.get('replacement', [])
-                print(f"✅ Загружены настройки замены ролей: {len(WHITELISTED_ROLES)} белых, {len(REPLACEMENT_ROLES)} заменяющих")
-        except:
-            WHITELISTED_ROLES = []
-            REPLACEMENT_ROLES = []
-    else:
-        WHITELISTED_ROLES = []
-        REPLACEMENT_ROLES = []
-
-def save_replacement_config():
-    config = {'whitelist': WHITELISTED_ROLES, 'replacement': REPLACEMENT_ROLES}
-    with open(REPLACEMENT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
-
-# Загружаем все данные
-user_data = load_data()
-shop_data = load_shop()
-load_boosts()
-load_temp_roles()
-load_warns()
-load_mutes()
-load_invites()
-load_replacement_config()
+async def save_boosts():
+    try:
+        await db.save_boosts(BOOST_ROLES)
+        print(f"✅ Сохранено {len(BOOST_ROLES)} бустеров в БД")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка сохранения бустеров: {e}")
+        return False
 
 # ============== ФУНКЦИИ УРОВНЕЙ ==============
 def calculate_level(xp):
@@ -412,7 +314,7 @@ async def check_temp_roles():
             del temp_roles[user_id]
     
     if removed_count > 0:
-        save_temp_roles()
+        await save_temp_roles()
         print(f"⏰ Автоматически удалено {removed_count} временных ролей, возвращено {restored_count} ролей")
     
     return removed_count, restored_count
@@ -462,7 +364,6 @@ async def apply_mute(member, reason, duration_minutes, moderator):
         'started': datetime.now().timestamp()
     }
     
-    save_mutes()
     return expires
 
 async def remove_mute(member):
@@ -477,7 +378,6 @@ async def remove_mute(member):
     
     if user_id in active_mutes:
         del active_mutes[user_id]
-        save_mutes()
         return True
     return False
 
@@ -573,7 +473,8 @@ async def voice_xp_loop():
                                 'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
                                 'username': username, 'messages': 0, 'voice_time': 0,
                                 'coins': 0, 'total_coins_earned': 0, 'items': [],
-                                'last_message_time': datetime.now().isoformat()
+                                'last_message_time': datetime.now().isoformat(),
+                                'last_bonus': 0
                             }
                         
                         old_level = user_data[user_id]['level']
@@ -591,7 +492,7 @@ async def voice_xp_loop():
                             user_data[user_id]['xp'] = current_xp
                         
                         voice_tracking[user_id]["total_earned"] = minutes_passed
-                        save_data(user_data)
+                        await save_data(user_data)
                         
                         print(f"⏱️ {member.name} +{xp_gained} XP за минуту в войсе")
             
@@ -640,18 +541,64 @@ async def check_invite_roles(guild, member):
                 except:
                     pass
 
+# ============== ФУНКЦИИ ДЛЯ ПРЕДУПРЕЖДЕНИЙ ==============
+def get_user_warns(user_id, guild_id):
+    key = f"{guild_id}_{user_id}"
+    return warns_data.get(key, [])
+
+def add_warn(user_id, guild_id, moderator_id, reason):
+    key = f"{guild_id}_{user_id}"
+    
+    if key not in warns_data:
+        warns_data[key] = []
+    
+    warn = {
+        'id': len(warns_data[key]) + 1,
+        'moderator_id': moderator_id,
+        'reason': reason,
+        'date': datetime.now().isoformat(),
+        'timestamp': datetime.now().timestamp()
+    }
+    
+    warns_data[key].append(warn)
+    return warn, len(warns_data[key])
+
+def remove_warn(user_id, guild_id, warn_id):
+    key = f"{guild_id}_{user_id}"
+    
+    if key in warns_data:
+        warns_data[key] = [w for w in warns_data[key] if w['id'] != warn_id]
+        return True
+    return False
+
+def clear_warns(user_id, guild_id):
+    key = f"{guild_id}_{user_id}"
+    
+    if key in warns_data:
+        del warns_data[key]
+        return True
+    return False
+
+# ============== ФУНКЦИИ ЗАМЕНЫ РОЛЕЙ ==============
+def load_replacement_config():
+    pass
+
+def save_replacement_config():
+    pass
+
 # ============== СОБЫТИЯ ==============
-# СОБЫТИЯ
 
 @bot.event
 async def on_ready():
-    # ===== ПОДКЛЮЧЕНИЕ К БД =====
+    print("🔄 Подключение к базе данных...")
+    
     if not await db.connect():
         print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к БД!")
         return
     
-    # Загружаем все данные из БД
     global user_data, shop_data, temp_roles, invites_data, BOOST_ROLES, warns_data
+    
+    print("📥 Загрузка данных из БД...")
     
     user_data = await db.load_levels()
     shop_data = await db.load_shop()
@@ -660,7 +607,7 @@ async def on_ready():
     BOOST_ROLES = await db.load_boosts()
     warns_data = await db.load_warns()
     
-    print(f'✅ Bot {bot.user} успешно запущен!')
+    print(f'✅ Бот {bot.user} успешно запущен!')
     print(f'✅ Система уровней активна! Загружено пользователей: {len(user_data)}')
     print(f'✅ Экономика и магазин активны! Загружено товаров: {len(shop_data)}')
     print(f'✅ Отслеживание голосовых каналов активно!')
@@ -678,7 +625,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name=f"!помощь - для просмотра команд"
+            name=f"!помощь | {users_in_system} игроков"
         )
     )
 
@@ -698,13 +645,16 @@ async def on_message(message):
             'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
             'username': str(message.author), 'messages': 0, 'voice_time': 0,
             'coins': 0, 'total_coins_earned': 0, 'items': [],
-            'last_message_time': datetime.now().isoformat()
+            'last_message_time': datetime.now().isoformat(),
+            'last_bonus': 0
         }
     else:
-        for field in ['message_xp', 'voice_xp', 'voice_time', 'coins', 'total_coins_earned', 'items']:
+        for field in ['message_xp', 'voice_xp', 'voice_time', 'coins', 'total_coins_earned', 'items', 'last_bonus']:
             if field not in user_data[user_id]:
                 if field == 'items':
                     user_data[user_id][field] = []
+                elif field == 'last_bonus':
+                    user_data[user_id][field] = 0
                 else:
                     user_data[user_id][field] = 0
     
@@ -730,7 +680,6 @@ async def on_message(message):
             user_data[user_id]['coins'] += coins_reward
             user_data[user_id]['total_coins_earned'] += coins_reward
         
-        # ===== ПРОВЕРКА И ВЫДАЧА РОЛЕЙ ЗА УРОВНИ =====
         level_role_text = ""
         
         if new_level in LEVEL_ROLES:
@@ -743,7 +692,6 @@ async def on_message(message):
                     role_name = LEVEL_ROLES_NAMES.get(new_level, f"Уровень {new_level}")
                     level_role_text = f"\n🎖️ **Новая роль:** {role.mention}"
                     
-                    # Отдельное сообщение о новой роли
                     role_embed = discord.Embed(
                         title=f"🎉 **НОВАЯ РОЛЬ!**",
                         description=f"{message.author.mention}, ты получил новую роль за достижение **{new_level}** уровня!",
@@ -767,7 +715,6 @@ async def on_message(message):
         if boost_multiplier > 1.0:
             xp_text += f"\n⚡ **Бустер:** x{boost_multiplier}"
         
-        # Добавляем информацию о полученной роли
         if level_role_text:
             xp_text += level_role_text
         
@@ -781,9 +728,10 @@ async def on_message(message):
         embed.set_footer(text=f"💫 {random.choice(phrases)}")
         embed.set_thumbnail(url=message.author.avatar.url if message.author.avatar else message.author.default_avatar.url)
         
-        level_up_msg = await message.channel.send(embed=embed, delete_after=15)
+        level_up_msg = await message.channel.send(embed=embed)
+        await level_up_msg.delete(delay=10)
     
-    save_data(user_data)
+    await save_data(user_data)
     await bot.process_commands(message)
 
 @bot.event
@@ -817,7 +765,8 @@ async def on_voice_state_update(member, before, after):
                         'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
                         'username': str(member), 'messages': 0, 'voice_time': 0,
                         'coins': 0, 'total_coins_earned': 0, 'items': [],
-                        'last_message_time': datetime.now().isoformat()
+                        'last_message_time': datetime.now().isoformat(),
+                        'last_bonus': 0
                     }
                 
                 old_level = user_data[user_id]['level']
@@ -846,7 +795,7 @@ async def on_voice_state_update(member, before, after):
                         pass
                 
                 print(f"🔊 {member.display_name} получил {xp_earned} XP за {int(minutes_voice)} минут в войсе (бустер x{boost_multiplier})")
-                save_data(user_data)
+                await save_data(user_data)
             
             del voice_tracking[user_id]
     
@@ -888,7 +837,7 @@ async def on_member_join(member):
                             'joined_at': datetime.now().isoformat()
                         })
                         
-                        save_invites()
+                        await save_invites()
                         
                         await check_invite_roles(member.guild, inviter)
                         
@@ -1207,7 +1156,7 @@ async def buy_command(ctx, item_id: str):
                             'saved_roles': []
                         })
                     
-                    save_temp_roles()
+                    await save_temp_roles()
                     
                     if time_added < 60:
                         added_str = f"{time_added} мин"
@@ -1260,7 +1209,7 @@ async def buy_command(ctx, item_id: str):
         if 'duration' not in item:
             user_data[user_id]['items'].append(item_id)
         
-        save_data(user_data)
+        await save_data(user_data)
         
         if user_id in user_boost_cache:
             del user_boost_cache[user_id]
@@ -1307,7 +1256,7 @@ async def inventory_command(ctx, member: discord.Member = None):
         
         if items_to_remove:
             user_data[user_id]['items'] = [item for item in user_data[user_id]['items'] if item not in items_to_remove]
-            save_data(user_data)
+            await save_data(user_data)
     
     items = user_data[user_id].get('items', []) if user_id in user_data else []
     
@@ -1370,8 +1319,6 @@ async def inventory_command(ctx, member: discord.Member = None):
     
     if user_id in temp_roles and temp_roles[user_id]:
         temp_roles_text = "\n**⏰ АКТИВНЫЕ ВРЕМЕННЫЕ РОЛИ:**\n"
-        active_count_total = 0
-        
         for record in temp_roles[user_id]:
             if record['expires'] > current_time:
                 role = ctx.guild.get_role(record['role_id'])
@@ -1385,12 +1332,10 @@ async def inventory_command(ctx, member: discord.Member = None):
                         time_str = f"{int(time_left/86400)} дн"
                     
                     temp_roles_text += f"  • {role.mention} — осталось {time_str}\n"
-                    active_count_total += 1
         
-        if active_count_total > 0:
-            embed.add_field(name="━━━━━━━━━━━━━━━━━━", value=temp_roles_text, inline=False)
+        embed.add_field(name="━━━━━━━━━━━━━━━━━━", value=temp_roles_text, inline=False)
     
-    embed.set_footer(text=f"📊 Всего предметов: {len(items)} • Активных временных ролей: {active_count_total}")
+    embed.set_footer(text=f"📊 Всего предметов: {len(items)}")
     await ctx.send(embed=embed)
 
 # ============== КОМАНДА !ТОПЫ ==============
@@ -1778,8 +1723,6 @@ async def mutelist_command(ctx):
 @bot.command(name='бан', aliases=['ban'])
 @commands.has_permissions(administrator=True)
 async def ban_command(ctx, member: discord.Member):
-    BAN_ROLE_ID = 1475987838897098794
-    
     ban_role = ctx.guild.get_role(BAN_ROLE_ID)
     
     if ban_role is None:
@@ -1818,7 +1761,7 @@ async def ban_command(ctx, member: discord.Member):
         }
         
         temp_roles[user_id].append(ban_record)
-        save_temp_roles()
+        await save_temp_roles()
         
         embed = discord.Embed(title=f"🔴 **БАН ВЫДАН**", description=f"Пользователю {member.mention} выдана роль {ban_role.mention}", color=0xff0000)
         embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
@@ -1853,8 +1796,6 @@ async def ban_command(ctx, member: discord.Member):
 @bot.command(name='чсс', aliases=['chss'])
 @commands.has_permissions(administrator=True)
 async def chss_command(ctx, member: discord.Member):
-    CHSS_ROLE_ID = 1475987685985226873
-    
     chss_role = ctx.guild.get_role(CHSS_ROLE_ID)
     
     if chss_role is None:
@@ -1893,7 +1834,7 @@ async def chss_command(ctx, member: discord.Member):
         }
         
         temp_roles[user_id].append(chss_record)
-        save_temp_roles()
+        await save_temp_roles()
         
         embed = discord.Embed(title=f"🟢 **ЧСС ВЫДАНА**", description=f"Пользователю {member.mention} выдана роль {chss_role.mention}", color=0x00ff00)
         embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
@@ -1928,9 +1869,6 @@ async def chss_command(ctx, member: discord.Member):
 @bot.command(name='снять', aliases=['unban', 'unchss'])
 @commands.has_permissions(administrator=True)
 async def remove_ban_chss_command(ctx, member: discord.Member):
-    BAN_ROLE_ID = 1475987838897098794
-    CHSS_ROLE_ID = 1475987685985226873
-    
     ban_role = ctx.guild.get_role(BAN_ROLE_ID)
     chss_role = ctx.guild.get_role(CHSS_ROLE_ID)
     
@@ -1979,7 +1917,7 @@ async def remove_ban_chss_command(ctx, member: discord.Member):
         
         if user_id in temp_roles:
             temp_roles[user_id] = [r for r in temp_roles[user_id] if r.get('role_id') not in [BAN_ROLE_ID, CHSS_ROLE_ID]]
-            save_temp_roles()
+            await save_temp_roles()
         
         if removed_roles or restored_roles:
             embed = discord.Embed(title=f"✅ **РОЛИ СНЯТЫ**", description=f"У {member.mention} выполнены следующие действия:", color=0x00ff00)
@@ -2005,9 +1943,6 @@ async def remove_ban_chss_command(ctx, member: discord.Member):
 @bot.command(name='банлист', aliases=['banlist', 'ban_list'])
 @commands.has_permissions(administrator=True)
 async def ban_list_command(ctx):
-    BAN_ROLE_ID = 1475987838897098794
-    CHSS_ROLE_ID = 1475987685985226873
-    
     banned_users = []
     
     for user_id, records in temp_roles.items():
@@ -2139,7 +2074,7 @@ async def clear_inventory_command(ctx, member: discord.Member = None, item_id: s
                 cleared_count += len(user_data[user_id]['items'])
                 user_data[user_id]['items'] = []
         
-        save_data(user_data)
+        await save_data(user_data)
         
         embed = discord.Embed(title=f"🧹 **МАССОВАЯ ОЧИСТКА**", description=f"Инвентарь **ВСЕХ** пользователей очищен!\nУдалено предметов: **{cleared_count}**", color=0x00ff00)
         embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
@@ -2169,7 +2104,7 @@ async def clear_inventory_command(ctx, member: discord.Member = None, item_id: s
             item_name = shop_data[item_id]['name']
         
         user_data[user_id]['items'].remove(item_id)
-        save_data(user_data)
+        await save_data(user_data)
         
         embed = discord.Embed(title=f"🧹 **ПРЕДМЕТ УДАЛЁН**", description=f"Из инвентаря {member.mention} удалён предмет: **{item_name}**", color=0x00ff00)
         embed.add_field(name="🆔 ID предмета", value=f"`{item_id}`", inline=True)
@@ -2186,7 +2121,7 @@ async def clear_inventory_command(ctx, member: discord.Member = None, item_id: s
     removed_count = len(removed_items)
     
     user_data[user_id]['items'] = []
-    save_data(user_data)
+    await save_data(user_data)
     
     embed = discord.Embed(title=f"🧹 **ИНВЕНТАРЬ ОЧИЩЕН**", description=f"Инвентарь {member.mention} полностью очищен", color=0x00ff00)
     embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
@@ -2383,12 +2318,12 @@ async def give_temp_role_command(ctx, member: discord.Member, role_input: str, d
                 existing_role['expires'] = expires
                 existing_role['saved_roles'] = saved_roles
                 role_exists = True
-                save_temp_roles()
+                await save_temp_roles()
                 break
         
         if not role_exists:
             temp_roles[user_id].append(temp_role_data)
-            save_temp_roles()
+            await save_temp_roles()
         
         if minutes < 60:
             time_str = f"{minutes} мин"
@@ -2505,11 +2440,10 @@ async def reset_levels_command(ctx):
     
     global user_data
     user_data.clear()
-    save_data(user_data)
+    await save_data(user_data)
     
     global warns_data
     warns_data.clear()
-    save_warns()
     
     embed = discord.Embed(title=f"✅ **ДАННЫЕ СБРОШЕНЫ**", description=f"Все уровни и предупреждения очищены!", color=0x00ff00)
     embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
@@ -2526,7 +2460,7 @@ async def give_coins_command(ctx, member: discord.Member, amount: int):
     
     user_data[user_id]['coins'] += amount
     user_data[user_id]['total_coins_earned'] += amount
-    save_data(user_data)
+    await save_data(user_data)
     
     embed = discord.Embed(title=f"✅ **КОИНЫ ВЫДАНЫ**", description=f"{member.mention} получил **{amount}** 🪙!", color=0x00ff00)
     embed.add_field(name="💰 Новый баланс", value=f"**{user_data[user_id]['coins']}** 🪙", inline=False)
@@ -2654,7 +2588,7 @@ async def reset_invites_command(ctx, member: discord.Member = None):
         
         global invites_data
         invites_data = {}
-        save_invites()
+        await save_invites()
         
         embed = discord.Embed(title=f"✅ **ПРИГЛАШЕНИЯ СБРОШЕНЫ**", description=f"Все приглашения всех пользователей сброшены!", color=0x00ff00)
         embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
@@ -2671,7 +2605,7 @@ async def reset_invites_command(ctx, member: discord.Member = None):
     if user_id in invites_data:
         old_count = invites_data[user_id]['invites']
         del invites_data[user_id]
-        save_invites()
+        await save_invites()
         
         for role_id in INVITE_ROLES.values():
             if role_id:
@@ -2738,7 +2672,7 @@ async def coin_flip_command(ctx, bet: int = None):
         result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙"
         color = 0xff0000
     
-    save_data(user_data)
+    await save_data(user_data)
     
     embed = discord.Embed(title=f"🪙 **ОРЛЯНКА**", color=color)
     embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
@@ -2787,7 +2721,7 @@ async def dice_command(ctx, bet: int = None, guess: int = None):
         result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙"
         color = 0xff0000
     
-    save_data(user_data)
+    await save_data(user_data)
     
     embed = discord.Embed(title=f"🎲 **КУБИК**", color=color)
     embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
@@ -2839,7 +2773,7 @@ async def slots_command(ctx, bet: int = None):
         result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙"
         color = 0xff0000
     
-    save_data(user_data)
+    await save_data(user_data)
     
     embed = discord.Embed(title=f"🎰 **СЛОТЫ**", color=color)
     embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
@@ -2899,7 +2833,7 @@ async def roulette_command(ctx, color: str = None, bet: int = None):
         result_text = f"😢 **ПРОИГРЫШ** -{bet} 🪙" if result_color != 'зеленое' else f"💚 **ЗЕЛЕНОЕ!** -{bet} 🪙"
         color_embed = 0xff0000
     
-    save_data(user_data)
+    await save_data(user_data)
     
     embed = discord.Embed(title=f"🎡 **РУЛЕТКА**", color=color_embed)
     embed.add_field(name="👤 Игрок", value=ctx.author.mention, inline=True)
@@ -2935,7 +2869,7 @@ async def bonus_command(ctx):
     user_data[user_id]['coins'] += bonus
     user_data[user_id]['total_coins_earned'] += bonus
     user_data[user_id]['last_bonus'] = current_time
-    save_data(user_data)
+    await save_data(user_data)
     
     embed = discord.Embed(title=f"🎁 **ЕЖЕДНЕВНЫЙ БОНУС**", description=f"{ctx.author.mention}, ты получил **{bonus}** 🪙!", color=0x00ff00)
     embed.add_field(name="💰 Текущий баланс", value=f"{user_data[user_id]['coins']} 🪙", inline=False)
@@ -2955,12 +2889,12 @@ async def set_boost_command(ctx, role: discord.Role, multiplier: float):
         return
     
     BOOST_ROLES[role.id] = multiplier
-    save_boosts()
+    await save_boosts()
     user_boost_cache.clear()
     
     bonus_percent = (multiplier - 1) * 100
     
-    embed = discord.Embed(title=f"⚡ **БУСТЕР НАСТРОЕН**", description=f"Роль {role.mention} теперь даёт множитель опыта **x{multiplier}** (+{bonus_percent:.0f}%)", color=0x00ff00)
+    embed = discord.Embed(title=f"⚡ **БУСТЕР НАСТРОЕН**", description=f"Роль {role.mention} теперь даёт множитель опыта **x{multiplier}** (+{bonus_percent:.0f}%)\n\n💾 Сохранено в БД!", color=0x00ff00)
     await ctx.send(embed=embed)
 
 # ============== КОМАНДА !REMOVE_BOOST ==============
@@ -2972,7 +2906,7 @@ async def remove_boost_command(ctx, role: discord.Role):
     if role.id in BOOST_ROLES:
         old_mult = BOOST_ROLES[role.id]
         del BOOST_ROLES[role.id]
-        save_boosts()
+        await save_boosts()
         user_boost_cache.clear()
         
         embed = discord.Embed(title=f"✅ **БУСТЕР УБРАН**", description=f"Роль {role.mention} больше не даёт бустер (было x{old_mult})", color=0x00ff00)
@@ -3015,13 +2949,9 @@ async def add_item_command(ctx, item_id: str, price: int, *, name: str):
         return
     
     shop_data[item_id] = {'name': name, 'price': price, 'description': 'Нет описания'}
+    await save_shop(shop_data)
     
-    # Пробуем сохранить
-    if save_shop(shop_data):
-        embed = discord.Embed(title=f"✅ **ТОВАР ДОБАВЛЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\n\n💾 Данные сохранены!", color=0x00ff00)
-    else:
-        embed = discord.Embed(title=f"⚠️ **ТОВАР ДОБАВЛЕН НО НЕ СОХРАНЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\n\n❌ Ошибка сохранения! Товар пропадет после перезапуска.", color=0xffaa00)
-    
+    embed = discord.Embed(title=f"✅ **ТОВАР ДОБАВЛЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\n\n💾 Сохранено в БД!", color=0x00ff00)
     await ctx.send(embed=embed)
 
 @bot.command(name='add_temp_item')
@@ -3035,9 +2965,9 @@ async def add_temp_item_command(ctx, item_id: str, price: int, duration: int, *,
     time_str = format_time(duration)
     
     shop_data[item_id] = {'name': name, 'price': price, 'description': f'Временный товар на {time_str}', 'duration': duration}
-    save_shop(shop_data)
+    await save_shop(shop_data)
     
-    embed = discord.Embed(title=f"✅ **ВРЕМЕННЫЙ ТОВАР ДОБАВЛЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\nДлительность: **{time_str}**", color=0x00ff00)
+    embed = discord.Embed(title=f"✅ **ВРЕМЕННЫЙ ТОВАР ДОБАВЛЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\nДлительность: **{time_str}**\n\n💾 Сохранено в БД!", color=0x00ff00)
     await ctx.send(embed=embed)
 
 @bot.command(name='remove_item')
@@ -3050,9 +2980,9 @@ async def remove_item_command(ctx, item_id: str):
     
     item_name = shop_data[item_id]['name']
     del shop_data[item_id]
-    save_shop(shop_data)
+    await save_shop(shop_data)
     
-    embed = discord.Embed(title=f"✅ **ТОВАР УДАЛЁН**", description=f"Товар **{item_name}** (ID: `{item_id}`) удалён из магазина", color=0x00ff00)
+    embed = discord.Embed(title=f"✅ **ТОВАР УДАЛЁН**", description=f"Товар **{item_name}** (ID: `{item_id}`) удалён из магазина\n\n💾 Сохранено в БД!", color=0x00ff00)
     await ctx.send(embed=embed)
 
 @bot.command(name='edit_item')
@@ -3096,14 +3026,14 @@ async def edit_item_command(ctx, item_id: str, field: str, *, value):
         await ctx.send(embed=embed)
         return
     
-    save_shop(shop_data)
+    await save_shop(shop_data)
     
     if field.lower() == 'duration':
         old_str = format_time(old)
         new_str = format_time(value)
-        embed = discord.Embed(title=f"✅ **ТОВАР ИЗМЕНЁН**", description=f"ID: `{item_id}`\n{field_name}: `{old_str}` → `{new_str}`", color=0x00ff00)
+        embed = discord.Embed(title=f"✅ **ТОВАР ИЗМЕНЁН**", description=f"ID: `{item_id}`\n{field_name}: `{old_str}` → `{new_str}`\n\n💾 Сохранено в БД!", color=0x00ff00)
     else:
-        embed = discord.Embed(title=f"✅ **ТОВАР ИЗМЕНЁН**", description=f"ID: `{item_id}`\n{field_name}: `{old}` → `{value}`", color=0x00ff00)
+        embed = discord.Embed(title=f"✅ **ТОВАР ИЗМЕНЁН**", description=f"ID: `{item_id}`\n{field_name}: `{old}` → `{value}`\n\n💾 Сохранено в БД!", color=0x00ff00)
     
     await ctx.send(embed=embed)
 
@@ -3116,12 +3046,12 @@ async def set_role_command(ctx, item_id: str, role: discord.Role):
         return
     
     shop_data[item_id]['role_id'] = role.id
-    save_shop(shop_data)
+    await save_shop(shop_data)
     
     boost_info = f"\n⚡ У этой роли есть бустер x{BOOST_ROLES[role.id]}!" if role.id in BOOST_ROLES else ""
     duration_info = f"\n⏰ Временная роль на {format_time(shop_data[item_id]['duration'])}" if 'duration' in shop_data[item_id] else ""
     
-    embed = discord.Embed(title=f"✅ **РОЛЬ ПРИВЯЗАНА**", description=f"К товару **{shop_data[item_id]['name']}** привязана роль {role.mention}{boost_info}{duration_info}", color=0x00ff00)
+    embed = discord.Embed(title=f"✅ **РОЛЬ ПРИВЯЗАНА**", description=f"К товару **{shop_data[item_id]['name']}** привязана роль {role.mention}{boost_info}{duration_info}\n\n💾 Сохранено в БД!", color=0x00ff00)
     await ctx.send(embed=embed)
 
 @bot.command(name='remove_role')
@@ -3134,8 +3064,8 @@ async def remove_role_command(ctx, item_id: str):
     
     if 'role_id' in shop_data[item_id]:
         del shop_data[item_id]['role_id']
-        save_shop(shop_data)
-        embed = discord.Embed(title=f"✅ **РОЛЬ УДАЛЕНА**", description=f"У товара **{shop_data[item_id]['name']}** больше нет привязанной роли", color=0x00ff00)
+        await save_shop(shop_data)
+        embed = discord.Embed(title=f"✅ **РОЛЬ УДАЛЕНА**", description=f"У товара **{shop_data[item_id]['name']}** больше нет привязанной роли\n\n💾 Сохранено в БД!", color=0x00ff00)
         await ctx.send(embed=embed)
     else:
         embed = discord.Embed(title=f"🔴 Ошибка", description=f"У товара **{shop_data[item_id]['name']}** нет привязанной роли!", color=0xff0000)
@@ -3149,7 +3079,3 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
-
-
-
-
