@@ -641,27 +641,44 @@ async def check_invite_roles(guild, member):
                     pass
 
 # ============== СОБЫТИЯ ==============
+# СОБЫТИЯ
+
 @bot.event
 async def on_ready():
-    print(f'✅ Бот {bot.user} успешно запущен!')
-    print(f'✅ Система уровней активна!')
-    print(f'✅ Экономика и магазин активны!')
+    # ===== ПОДКЛЮЧЕНИЕ К БД =====
+    if not await db.connect():
+        print("❌ КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к БД!")
+        return
+    
+    # Загружаем все данные из БД
+    global user_data, shop_data, temp_roles, invites_data, BOOST_ROLES, warns_data
+    
+    user_data = await db.load_levels()
+    shop_data = await db.load_shop()
+    temp_roles = await db.load_temp_roles()
+    invites_data = await db.load_invites()
+    BOOST_ROLES = await db.load_boosts()
+    warns_data = await db.load_warns()
+    
+    print(f'✅ Bot {bot.user} успешно запущен!')
+    print(f'✅ Система уровней активна! Загружено пользователей: {len(user_data)}')
+    print(f'✅ Экономика и магазин активны! Загружено товаров: {len(shop_data)}')
     print(f'✅ Отслеживание голосовых каналов активно!')
     print(f'✅ СИСТЕМА БУСТЕРОВ АКТИВНА! Настроено ролей: {len(BOOST_ROLES)}')
     print(f'✅ СИСТЕМА ВРЕМЕННЫХ РОЛЕЙ АКТИВНА! Активных: {sum(len(roles) for roles in temp_roles.values())}')
     print(f'✅ СИСТЕМА ПРЕДУПРЕЖДЕНИЙ АКТИВНА! Всего предупреждений: {sum(len(warns) for warns in warns_data.values())}')
     print(f'✅ СИСТЕМА МУТОВ АКТИВНА! Активных мутов: {len(active_mutes)}')
     print(f'✅ СИСТЕМА ПРИГЛАШЕНИЙ АКТИВНА! Всего записей: {len(invites_data)}')
-    
+
     temp_roles_check.start()
     mutes_check.start()
-    
+
     users_in_system = len(user_data)
-    
+
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name=f"!помощь | {users_in_system} игроков"
+            name=f"!помощь - для просмотра команд"
         )
     )
 
@@ -3132,6 +3149,7 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
 
 
