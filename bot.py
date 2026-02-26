@@ -502,7 +502,8 @@ async def voice_xp_loop():
         await asyncio.sleep(60)
 
 # ============== ФУНКЦИИ ДЛЯ ПРИГЛАШЕНИЙ ==============
-async def check_invite_roles(guild, member):
+aasync def check_invite_roles(guild, member):
+    """Проверяет и выдаёт роли за приглашения"""
     inviter_id = str(member.id)
     
     if inviter_id not in invites_data:
@@ -510,13 +511,15 @@ async def check_invite_roles(guild, member):
     
     invites_count = invites_data[inviter_id]['invites']
     
-    for required_invites, role_id in INVITE_ROLES.items():
+    # Проверяем все роли из INVITE_ROLES (отсортировано по возрастанию)
+    for required_invites, role_id in sorted(INVITE_ROLES.items()):
         if role_id and invites_count >= required_invites:
             role = guild.get_role(role_id)
             if role and role not in member.roles:
                 try:
                     await member.add_roles(role, reason=f"Достигнуто {required_invites} приглашений")
                     
+                    # Уведомление в ЛС
                     try:
                         embed = discord.Embed(
                             title=f"🎖️ **НОВАЯ РОЛЬ!**",
@@ -527,6 +530,7 @@ async def check_invite_roles(guild, member):
                     except:
                         pass
                     
+                    # Уведомление в общий чат
                     try:
                         channel = guild.system_channel or guild.text_channels[0]
                         embed = discord.Embed(
@@ -538,8 +542,10 @@ async def check_invite_roles(guild, member):
                     except:
                         pass
                     
-                except:
-                    pass
+                    print(f"✅ {member.name} получил роль {role.name} за {required_invites} приглашений")
+                    
+                except Exception as e:
+                    print(f"❌ Ошибка выдачи роли {role.name}: {e}")
 
 # ============== ФУНКЦИИ ДЛЯ ПРЕДУПРЕЖДЕНИЙ ==============
 def get_user_warns(user_id, guild_id):
@@ -2476,7 +2482,6 @@ async def set_voice_xp_command(ctx, xp_per_minute: int):
     embed = discord.Embed(title=f"⚡ **НАСТРОЙКИ ИЗМЕНЕНЫ**", description=f"Опыт за минуту в войсе установлен: **{xp_per_minute} XP**", color=0x00ff00)
     await ctx.send(embed=embed)
 
-# ============== КОМАНДА !ПРИГ ==============
 @bot.command(name='приг', aliases=['invites', 'приглашения'])
 async def invites_command(ctx, member: discord.Member = None):
     if member is None:
@@ -2485,7 +2490,11 @@ async def invites_command(ctx, member: discord.Member = None):
     user_id = str(member.id)
     
     if user_id not in invites_data:
-        embed = discord.Embed(title=f"📊 **ПРИГЛАШЕНИЯ**", description=f"У {member.mention} пока нет приглашений", color=0xffaa00)
+        embed = discord.Embed(
+            title=f"📊 **ПРИГЛАШЕНИЯ**",
+            description=f"У {member.mention} пока нет приглашений",
+            color=0xffaa00
+        )
         await ctx.send(embed=embed)
         return
     
@@ -2493,31 +2502,51 @@ async def invites_command(ctx, member: discord.Member = None):
     invites_count = data['invites']
     joined_users = data.get('joined_users', [])
     
+    # Определяем текущую роль
     current_role = "Нет роли"
+    current_role_mention = ""
     for req_invites, role_id in sorted(INVITE_ROLES.items()):
         if role_id and invites_count >= req_invites:
             role = ctx.guild.get_role(role_id)
             if role:
-                current_role = role.mention
+                current_role = role.name
+                current_role_mention = role.mention
     
+    # Следующая цель
     next_goal = None
+    next_role_mention = ""
     for req_invites, role_id in sorted(INVITE_ROLES.items()):
         if role_id and invites_count < req_invites:
             next_goal = req_invites
+            next_role = ctx.guild.get_role(role_id)
+            if next_role:
+                next_role_mention = next_role.mention
             break
     
-    embed = discord.Embed(title=f"📊 **ПРИГЛАШЕНИЯ {member.display_name}**", color=0x3498db)
+    embed = discord.Embed(
+        title=f"📊 **ПРИГЛАШЕНИЯ {member.display_name}**",
+        color=0x3498db
+    )
     embed.set_author(name=member.display_name, icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
     
     embed.add_field(name="👥 Приглашений", value=f"**{invites_count}**", inline=True)
-    embed.add_field(name="🎖️ Текущая роль", value=current_role, inline=True)
+    
+    if current_role_mention:
+        embed.add_field(name="🎖️ Текущая роль", value=current_role_mention, inline=True)
+    else:
+        embed.add_field(name="🎖️ Текущая роль", value=current_role, inline=True)
     
     if next_goal:
         embed.add_field(name="🎯 Следующая цель", value=f"**{next_goal}** приглашений", inline=True)
+        if next_role_mention:
+            embed.add_field(name="🎁 Награда", value=next_role_mention, inline=True)
+        
+        # Прогресс-бар
         progress = int((invites_count / next_goal) * 10)
         bar = "🟩" * progress + "⬜" * (10 - progress)
         embed.add_field(name="📈 Прогресс", value=f"{bar} {invites_count}/{next_goal}", inline=False)
     
+    # Последние приглашённые
     if joined_users:
         recent = joined_users[-5:]
         recent_text = ""
@@ -2526,6 +2555,161 @@ async def invites_command(ctx, member: discord.Member = None):
             recent_text += f"• {user['username']} ({date})\n"
         embed.add_field(name="📋 Последние приглашённые", value=recent_text, inline=False)
     
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !ПРИГРОЛЬ ==============
+@bot.command(name='пригроль', aliases=['inviterole', 'пригроли'])
+@commands.has_permissions(administrator=True)
+async def inviterole_command(ctx, role: discord.Role, invites: int):
+    """
+    !пригроль @роль количество - установить роль за количество приглашений
+    Пример: !пригроль @ВербовщикI 5
+    """
+    global INVITE_ROLES
+    
+    # Добавляем или обновляем роль
+    INVITE_ROLES[invites] = role.id
+    
+    # Сортируем словарь по ключам (чтобы было красиво)
+    INVITE_ROLES = dict(sorted(INVITE_ROLES.items()))
+    
+    # Сохраняем в БД
+    await save_invites()
+    
+    embed = discord.Embed(
+        title=f"✅ **РОЛЬ ЗА ПРИГЛАШЕНИЯ УСТАНОВЛЕНА**",
+        description=f"За **{invites}** приглашений будет выдаваться роль {role.mention}",
+        color=0x00ff00
+    )
+    
+    # Показываем все текущие роли
+    roles_text = ""
+    for inv_count, role_id in INVITE_ROLES.items():
+        r = ctx.guild.get_role(role_id)
+        if r:
+            roles_text += f"• {inv_count} приг. → {r.mention}\n"
+    
+    if roles_text:
+        embed.add_field(name="📋 **ТЕКУЩИЕ РОЛИ**", value=roles_text, inline=False)
+    
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='пригрольудалить', aliases=['removerole', 'удалитьрольприг'])
+@commands.has_permissions(administrator=True)
+async def inviterole_remove_command(ctx, invites: int):
+    """
+    !пригрольудалить количество - удалить роль за указанное количество приглашений
+    Пример: !пригрольудалить 5
+    """
+    global INVITE_ROLES
+    
+    if invites in INVITE_ROLES:
+        role_id = INVITE_ROLES[invites]
+        role = ctx.guild.get_role(role_id)
+        role_name = role.name if role else f"ID: {role_id}"
+        
+        del INVITE_ROLES[invites]
+        await save_invites()
+        
+        embed = discord.Embed(
+            title=f"✅ **РОЛЬ УДАЛЕНА**",
+            description=f"Роль за **{invites}** приглашений ({role_name}) больше не будет выдаваться",
+            color=0x00ff00
+        )
+    else:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"Роль за **{invites}** приглашений не найдена",
+            color=0xff0000
+        )
+    
+    await ctx.send(embed=embed)
+
+
+@bot.command(name='пригролисписок', aliases=['listroles', 'списокролейприг'])
+@commands.has_permissions(administrator=True)
+async def inviterole_list_command(ctx):
+    """
+    !пригролисписок - показать все роли за приглашения
+    """
+    if not INVITE_ROLES:
+        embed = discord.Embed(
+            title=f"📋 **РОЛИ ЗА ПРИГЛАШЕНИЯ**",
+            description=f"Пока нет настроенных ролей",
+            color=0xffaa00
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    embed = discord.Embed(
+        title=f"📋 **РОЛИ ЗА ПРИГЛАШЕНИЯ**",
+        color=0x3498db
+    )
+    
+    roles_text = ""
+    for inv_count, role_id in sorted(INVITE_ROLES.items()):
+        role = ctx.guild.get_role(role_id)
+        if role:
+            roles_text += f"• **{inv_count}** приглашений → {role.mention}\n"
+        else:
+            roles_text += f"• **{inv_count}** приглашений → Роль удалена (ID: {role_id})\n"
+    
+    embed.description = roles_text
+    embed.set_footer(text=f"Всего настроено ролей: {len(INVITE_ROLES)}")
+    
+    await ctx.send(embed=embed)
+
+@bot.command(name='пригсбросить', aliases=['resetinvitesadmin'])
+@commands.has_permissions(administrator=True)
+async def reset_specific_invites_command(ctx, member: discord.Member, amount: int = None):
+    """
+    !пригсбросить @пользователь - сбросить все приглашения пользователя
+    !пригсбросить @пользователь 5 - установить конкретное количество
+    """
+    user_id = str(member.id)
+    
+    if user_id not in invites_data:
+        embed = discord.Embed(
+            title=f"❌ **ОШИБКА**",
+            description=f"У {member.mention} нет данных о приглашениях",
+            color=0xff0000
+        )
+        await ctx.send(embed=embed)
+        return
+    
+    old_count = invites_data[user_id]['invites']
+    
+    if amount is not None:
+        # Устанавливаем конкретное количество
+        invites_data[user_id]['invites'] = amount
+        embed = discord.Embed(
+            title=f"✅ **ПРИГЛАШЕНИЯ ИЗМЕНЕНЫ**",
+            description=f"У {member.mention} приглашения изменены: `{old_count}` → `{amount}`",
+            color=0x00ff00
+        )
+    else:
+        # Сбрасываем в 0
+        invites_data[user_id]['invites'] = 0
+        embed = discord.Embed(
+            title=f"✅ **ПРИГЛАШЕНИЯ СБРОШЕНЫ**",
+            description=f"У {member.mention} сброшены приглашения (было: {old_count})",
+            color=0x00ff00
+        )
+    
+    await save_invites()
+    
+    # Обновляем роли (снимаем те, которые уже не положены)
+    for required_invites, role_id in INVITE_ROLES.items():
+        role = ctx.guild.get_role(role_id)
+        if role and role in member.roles:
+            if invites_data[user_id]['invites'] < required_invites:
+                try:
+                    await member.remove_roles(role, reason="Приглашения сброшены")
+                except:
+                    pass
+    
+    embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
     await ctx.send(embed=embed)
 
 # ============== КОМАНДА !ПРИГТОП ==============
@@ -3079,3 +3263,4 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
