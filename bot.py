@@ -477,34 +477,7 @@ async def voice_xp_loop():
                                 'last_bonus': 0
                             }
                         
-                        # Проверяем и инициализируем все поля
-if user_id not in user_data:
-    user_data[user_id] = {
-        'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
-        'username': str(message.author), 'messages': 0, 'voice_time': 0,
-        'coins': 0, 'total_coins_earned': 0, 'items': [],
-        'last_message_time': datetime.now().isoformat(),
-        'last_bonus': 0
-    }
-else:
-    # Проверяем наличие всех нужных полей
-    default_fields = {
-        'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
-        'messages': 0, 'voice_time': 0, 'coins': 0, 'total_coins_earned': 0,
-        'items': [], 'last_bonus': 0
-    }
-    
-    for field, default_value in default_fields.items():
-        if field not in user_data[user_id]:
-            user_data[user_id][field] = default_value
-    
-    if 'username' not in user_data[user_id]:
-        user_data[user_id]['username'] = str(message.author)
-    
-    if 'last_message_time' not in user_data[user_id]:
-        user_data[user_id]['last_message_time'] = datetime.now().isoformat()
-
-old_level = user_data[user_id]['level']  # Теперь поле точно существует
+                        old_level = user_data[user_id]['level']
                         
                         user_data[user_id]['voice_xp'] += xp_gained
                         user_data[user_id]['voice_time'] += 1
@@ -530,7 +503,6 @@ old_level = user_data[user_id]['level']  # Теперь поле точно су
 
 # ============== ФУНКЦИИ ДЛЯ ПРИГЛАШЕНИЙ ==============
 async def check_invite_roles(guild, member):
-    """Проверяет и выдаёт роли за приглашения"""
     inviter_id = str(member.id)
     
     if inviter_id not in invites_data:
@@ -538,7 +510,6 @@ async def check_invite_roles(guild, member):
     
     invites_count = invites_data[inviter_id]['invites']
     
-    # Проверяем все роли из INVITE_ROLES (отсортировано по возрастанию)
     for required_invites, role_id in sorted(INVITE_ROLES.items()):
         if role_id and invites_count >= required_invites:
             role = guild.get_role(role_id)
@@ -546,7 +517,6 @@ async def check_invite_roles(guild, member):
                 try:
                     await member.add_roles(role, reason=f"Достигнуто {required_invites} приглашений")
                     
-                    # Уведомление в ЛС
                     try:
                         embed = discord.Embed(
                             title=f"🎖️ **НОВАЯ РОЛЬ!**",
@@ -557,7 +527,6 @@ async def check_invite_roles(guild, member):
                     except:
                         pass
                     
-                    # Уведомление в общий чат
                     try:
                         channel = guild.system_channel or guild.text_channels[0]
                         embed = discord.Embed(
@@ -569,10 +538,8 @@ async def check_invite_roles(guild, member):
                     except:
                         pass
                     
-                    print(f"✅ {member.name} получил роль {role.name} за {required_invites} приглашений")
-                    
-                except Exception as e:
-                    print(f"❌ Ошибка выдачи роли {role.name}: {e}")
+                except:
+                    pass
 
 # ============== ФУНКЦИИ ДЛЯ ПРЕДУПРЕЖДЕНИЙ ==============
 def get_user_warns(user_id, guild_id):
@@ -618,6 +585,42 @@ def load_replacement_config():
 
 def save_replacement_config():
     pass
+
+# ============== ФУНКЦИЯ ДЛЯ ОБРАБОТКИ ПРИГЛАШЕНИЙ ==============
+async def process_invite(inviter, member, guild):
+    """Обработка найденного приглашения"""
+    inviter_id = str(inviter.id)
+    
+    if inviter_id not in invites_data:
+        invites_data[inviter_id] = {
+            'username': str(inviter),
+            'invites': 0,
+            'joined_users': []
+        }
+    
+    invites_data[inviter_id]['invites'] += 1
+    invites_data[inviter_id]['joined_users'].append({
+        'user_id': member.id,
+        'username': str(member),
+        'joined_at': datetime.now().isoformat()
+    })
+    
+    await save_invites()
+    print(f"✅ Приглашение засчитано! Теперь у {inviter.name} {invites_data[inviter_id]['invites']} приглашений")
+    
+    await check_invite_roles(guild, inviter)
+    
+    try:
+        embed = discord.Embed(
+            title=f"🎉 **НОВОЕ ПРИГЛАШЕНИЕ**",
+            description=f"Пользователь **{member.name}** присоединился по вашему приглашению!",
+            color=0x00ff00
+        )
+        embed.add_field(name="📊 Всего приглашений", value=f"**{invites_data[inviter_id]['invites']}**", inline=True)
+        await inviter.send(embed=embed)
+        print(f"✅ Уведомление отправлено {inviter.name}")
+    except Exception as e:
+        print(f"❌ Не удалось отправить уведомление: {e}")
 
 # ============== СОБЫТИЯ ==============
 
@@ -680,25 +683,40 @@ async def on_message(message):
         }
     else:
         # Проверяем наличие всех полей
-        required_fields = {
-            'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
-            'messages': 0, 'voice_time': 0, 'coins': 0, 'total_coins_earned': 0,
-            'items': [], 'last_bonus': 0, 'username': str(message.author),
-            'last_message_time': datetime.now().isoformat()
-        }
-        
-        for field, default_value in required_fields.items():
-            if field not in user_data[user_id]:
-                user_data[user_id][field] = default_value
+        if 'level' not in user_data[user_id]:
+            user_data[user_id]['level'] = 0
+        if 'xp' not in user_data[user_id]:
+            user_data[user_id]['xp'] = 0
+        if 'total_xp' not in user_data[user_id]:
+            user_data[user_id]['total_xp'] = 0
+        if 'voice_xp' not in user_data[user_id]:
+            user_data[user_id]['voice_xp'] = 0
+        if 'message_xp' not in user_data[user_id]:
+            user_data[user_id]['message_xp'] = 0
+        if 'messages' not in user_data[user_id]:
+            user_data[user_id]['messages'] = 0
+        if 'voice_time' not in user_data[user_id]:
+            user_data[user_id]['voice_time'] = 0
+        if 'coins' not in user_data[user_id]:
+            user_data[user_id]['coins'] = 0
+        if 'total_coins_earned' not in user_data[user_id]:
+            user_data[user_id]['total_coins_earned'] = 0
+        if 'items' not in user_data[user_id]:
+            user_data[user_id]['items'] = []
+        if 'last_bonus' not in user_data[user_id]:
+            user_data[user_id]['last_bonus'] = 0
+        if 'username' not in user_data[user_id]:
+            user_data[user_id]['username'] = str(message.author)
+        if 'last_message_time' not in user_data[user_id]:
+            user_data[user_id]['last_message_time'] = datetime.now().isoformat()
     
-    # Дальше продолжается твой код...
     boost_multiplier = get_user_boost(message.author)
     base_xp = random.randint(10, 20)
     xp_gained = int(base_xp * boost_multiplier)
     
-    old_level = user_data[user_id]['level']  # Теперь поле точно есть
-    # ... остальной код
+    old_level = user_data[user_id]['level']
     
+    # Начисляем опыт
     user_data[user_id]['message_xp'] += xp_gained
     user_data[user_id]['total_xp'] += xp_gained
     user_data[user_id]['messages'] += 1
@@ -719,6 +737,7 @@ async def on_message(message):
             user_data[user_id]['coins'] += coins_reward
             user_data[user_id]['total_coins_earned'] += coins_reward
         
+        # ===== ПРОВЕРКА И ВЫДАЧА РОЛЕЙ ЗА УРОВНИ =====
         level_role_text = ""
         
         if new_level in LEVEL_ROLES:
@@ -772,6 +791,111 @@ async def on_message(message):
     
     await save_data(user_data)
     await bot.process_commands(message)
+
+@bot.event
+async def on_member_join(member):
+    print(f"👤 ВНИМАНИЕ! Новый пользователь: {member.name} (ID: {member.id}) зашёл на сервер {member.guild.name}")
+    guild = member.guild
+    
+    try:
+        # Проверяем права бота
+        me = guild.me
+        print(f"🤖 Бот: {me.name}")
+        print(f"🔧 Права бота: Manage Server = {me.guild_permissions.manage_guild}, Manage Channels = {me.guild_permissions.manage_channels}")
+        
+        if not me.guild_permissions.manage_guild:
+            print("❌ У БОТА НЕТ ПРАВА 'Управлять сервером'! Без этого приглашения не будут отслеживаться!")
+            return
+        
+        # Получаем приглашения ДО
+        print("📥 Получаем список приглашений ДО...")
+        invites_before = await guild.invites()
+        print(f"📊 Приглашений ДО: {len(invites_before)}")
+        
+        # Выводим все приглашения до
+        for inv in invites_before:
+            print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
+        
+        # ===== ПЕРВАЯ ПОПЫТКА (через 2 секунды) =====
+        print("⏰ Первая попытка: ждём 2 секунды...")
+        await asyncio.sleep(2)
+        
+        invites_after = await guild.invites()
+        print(f"📊 Приглашений ПОСЛЕ (1-я попытка): {len(invites_after)}")
+        
+        # Выводим все приглашения после
+        for inv in invites_after:
+            print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
+        
+        # Ищем изменения
+        found = False
+        for invite in invites_before:
+            for new_invite in invites_after:
+                if invite.code == new_invite.code:
+                    if new_invite.uses > invite.uses:
+                        inviter = new_invite.inviter
+                        print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (1-я попытка): {inviter.name} (ID: {inviter.id})")
+                        print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
+                        await process_invite(inviter, member, guild)
+                        found = True
+                        break
+        
+        # ===== ВТОРАЯ ПОПЫТКА (если не нашли, ждём ещё 3 секунды) =====
+        if not found:
+            print("⏰ Первая попытка не дала результатов. Ждём ещё 3 секунды (всего 5)...")
+            await asyncio.sleep(3)
+            
+            invites_after_2 = await guild.invites()
+            print(f"📊 Приглашений ПОСЛЕ (2-я попытка): {len(invites_after_2)}")
+            
+            for inv in invites_after_2:
+                print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
+            
+            for invite in invites_before:
+                for new_invite in invites_after_2:
+                    if invite.code == new_invite.code:
+                        if new_invite.uses > invite.uses:
+                            inviter = new_invite.inviter
+                            print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (2-я попытка): {inviter.name} (ID: {inviter.id})")
+                            print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
+                            await process_invite(inviter, member, guild)
+                            found = True
+                            break
+        
+        # ===== ТРЕТЬЯ ПОПЫТКА (если всё ещё не нашли, ждём ещё 2 секунды) =====
+        if not found:
+            print("⏰ Вторая попытка не дала результатов. Ждём ещё 2 секунды (всего 7)...")
+            await asyncio.sleep(2)
+            
+            invites_after_3 = await guild.invites()
+            print(f"📊 Приглашений ПОСЛЕ (3-я попытка): {len(invites_after_3)}")
+            
+            for inv in invites_after_3:
+                print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
+            
+            for invite in invites_before:
+                for new_invite in invites_after_3:
+                    if invite.code == new_invite.code:
+                        if new_invite.uses > invite.uses:
+                            inviter = new_invite.inviter
+                            print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (3-я попытка): {inviter.name} (ID: {inviter.id})")
+                            print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
+                            await process_invite(inviter, member, guild)
+                            found = True
+                            break
+        
+        if not found:
+            print("❌ НЕ НАЙДЕНО ИЗМЕНЕНИЙ ПОСЛЕ 3 ПОПЫТОК!")
+            print("Возможные причины:")
+            print("  • Пользователь зашёл по ссылке, созданной ДО запуска бота")
+            print("  • У бота нет прав на просмотр приглашений")
+            print("  • Приглашение было создано анонимно")
+            print("  • Discord тормозит больше 7 секунд (редко, но бывает)")
+            
+    except Exception as e:
+        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в on_member_join: {e}")
+        import traceback
+        traceback.print_exc()
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -843,136 +967,6 @@ async def on_voice_state_update(member, before, after):
             voice_tracking[user_id]["channel_id"] = after.channel.id
             print(f"🔊 {member.display_name} перешёл в {after.channel.name}")
 
-@bot.event
-async def on_member_join(member):
-    print(f"👤 ВНИМАНИЕ! Новый пользователь: {member.name} (ID: {member.id}) зашёл на сервер {member.guild.name}")
-    guild = member.guild
-    
-    try:
-        # Проверяем права бота
-        me = guild.me
-        print(f"🤖 Бот: {me.name}")
-        print(f"🔧 Права бота: Manage Server = {me.guild_permissions.manage_guild}, Manage Channels = {me.guild_permissions.manage_channels}")
-        
-        if not me.guild_permissions.manage_guild:
-            print("❌ У БОТА НЕТ ПРАВА 'Управлять сервером'! Без этого приглашения не будут отслеживаться!")
-            return
-        
-        # Получаем приглашения ДО
-        print("📥 Получаем список приглашений ДО...")
-        invites_before = await guild.invites()
-        print(f"📊 Приглашений ДО: {len(invites_before)}")
-        
-        # Выводим все приглашения до
-        for inv in invites_before:
-            print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
-        
-        # ===== ПЕРВАЯ ПОПЫТКА (через 2 секунды) =====
-        print("⏰ Первая попытка: ждём 4 секунды...")
-        await asyncio.sleep(4)
-        
-        invites_after = await guild.invites()
-        print(f"📊 Приглашений ПОСЛЕ (1-я попытка): {len(invites_after)}")
-        
-        # Ищем изменения
-        found = False
-        for invite in invites_before:
-            for new_invite in invites_after:
-                if invite.code == new_invite.code:
-                    if new_invite.uses > invite.uses:
-                        inviter = new_invite.inviter
-                        print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (1-я попытка): {inviter.name} (ID: {inviter.id})")
-                        print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
-                        await process_invite(inviter, member, guild)
-                        found = True
-                        break
-        
-        # ===== ВТОРАЯ ПОПЫТКА (если не нашли, ждём ещё 3 секунды) =====
-        if not found:
-            print("⏰ Первая попытка не дала результатов. Ждём ещё 7 секунды (всего 19)...")
-            await asyncio.sleep(7)
-            
-            invites_after_2 = await guild.invites()
-            print(f"📊 Приглашений ПОСЛЕ (2-я попытка): {len(invites_after_2)}")
-            
-            for invite in invites_before:
-                for new_invite in invites_after_2:
-                    if invite.code == new_invite.code:
-                        if new_invite.uses > invite.uses:
-                            inviter = new_invite.inviter
-                            print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (2-я попытка): {inviter.name} (ID: {inviter.id})")
-                            print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
-                            await process_invite(inviter, member, guild)
-                            found = True
-                            break
-        
-        # ===== ТРЕТЬЯ ПОПЫТКА (если всё ещё не нашли, ждём ещё 2 секунды) =====
-        if not found:
-            print("⏰ Вторая попытка не дала результатов. Ждём ещё 10 секунд (всего 19)...")
-            await asyncio.sleep(10)
-            
-            invites_after_3 = await guild.invites()
-            print(f"📊 Приглашений ПОСЛЕ (3-я попытка): {len(invites_after_3)}")
-            
-            for invite in invites_before:
-                for new_invite in invites_after_3:
-                    if invite.code == new_invite.code:
-                        if new_invite.uses > invite.uses:
-                            inviter = new_invite.inviter
-                            print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (3-я попытка): {inviter.name} (ID: {inviter.id})")
-                            print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
-                            await process_invite(inviter, member, guild)
-                            found = True
-                            break
-        
-        if not found:
-            print("❌ НЕ НАЙДЕНО ИЗМЕНЕНИЙ ПОСЛЕ 3 ПОПЫТОК!")
-            print("Возможные причины:")
-            print("  • Пользователь зашёл по ссылке, созданной ДО запуска бота")
-            print("  • У бота нет прав на просмотр приглашений")
-            print("  • Приглашение было создано анонимно")
-            print("  • Discord тормозит больше 7 секунд (редко, но бывает)")
-            
-    except Exception as e:
-        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в on_member_join: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-async def process_invite(inviter, member, guild):
-    """Обработка найденного приглашения"""
-    inviter_id = str(inviter.id)
-    
-    if inviter_id not in invites_data:
-        invites_data[inviter_id] = {
-            'username': str(inviter),
-            'invites': 0,
-            'joined_users': []
-        }
-    
-    invites_data[inviter_id]['invites'] += 1
-    invites_data[inviter_id]['joined_users'].append({
-        'user_id': member.id,
-        'username': str(member),
-        'joined_at': datetime.now().isoformat()
-    })
-    
-    await save_invites()
-    print(f"✅ Приглашение засчитано! Теперь у {inviter.name} {invites_data[inviter_id]['invites']} приглашений")
-    
-    await check_invite_roles(guild, inviter)
-    
-    try:
-        embed = discord.Embed(
-            title=f"🎉 **НОВОЕ ПРИГЛАШЕНИЕ**",
-            description=f"Пользователь **{member.name}** присоединился по вашему приглашению!",
-            color=0x00ff00
-        )
-        embed.add_field(name="📊 Всего приглашений", value=f"**{invites_data[inviter_id]['invites']}**", inline=True)
-        await inviter.send(embed=embed)
-        print(f"✅ Уведомление отправлено {inviter.name}")
-    except Exception as e:
-        print(f"❌ Не удалось отправить уведомление: {e}")
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
@@ -2080,519 +2074,7 @@ async def ban_list_command(ctx):
         embed = discord.Embed(title=f"📋 **СПИСОК ЗАБЛОКИРОВАННЫХ**", description="Нет пользователей с баном или ЧСС", color=0xffaa00)
         await ctx.send(embed=embed)
 
-# ============== КОМАНДЫ ДЛЯ УПРАВЛЕНИЯ ЗАМЕНЯЮЩИМИ РОЛЯМИ ==============
-@bot.command(name='replacement_add')
-@commands.has_permissions(administrator=True)
-async def replacement_add_command(ctx, role: discord.Role):
-    global REPLACEMENT_ROLES
-    
-    if role.id not in REPLACEMENT_ROLES:
-        REPLACEMENT_ROLES.append(role.id)
-        save_replacement_config()
-        
-        embed = discord.Embed(title=f"✅ **РОЛЬ ДОБАВЛЕНА В ЗАМЕНЯЮЩИЕ**", description=f"При выдаче роли {role.mention} будут удаляться все остальные роли (кроме белого списка)\n\n💾 Настройка сохранена!", color=0x00ff00)
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(title=f"ℹ️ **РОЛЬ УЖЕ В ЗАМЕНЯЮЩИХ**", description=f"Роль {role.mention} уже находится в списке заменяющих", color=0xffaa00)
-        await ctx.send(embed=embed)
-
-@bot.command(name='replacement_remove')
-@commands.has_permissions(administrator=True)
-async def replacement_remove_command(ctx, role: discord.Role):
-    global REPLACEMENT_ROLES
-    
-    if role.id in REPLACEMENT_ROLES:
-        REPLACEMENT_ROLES.remove(role.id)
-        save_replacement_config()
-        
-        embed = discord.Embed(title=f"✅ **РОЛЬ УБРАНА ИЗ ЗАМЕНЯЮЩИХ**", description=f"Роль {role.mention} больше не будет удалять другие роли при выдаче\n\n💾 Настройка сохранена!", color=0x00ff00)
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(title=f"ℹ️ **РОЛЬ НЕ В ЗАМЕНЯЮЩИХ**", description=f"Роль {role.mention} не находится в списке заменяющих", color=0xffaa00)
-        await ctx.send(embed=embed)
-
-@bot.command(name='whitelist_add')
-@commands.has_permissions(administrator=True)
-async def whitelist_add_command(ctx, role: discord.Role):
-    global WHITELISTED_ROLES
-    
-    if role.id not in WHITELISTED_ROLES:
-        WHITELISTED_ROLES.append(role.id)
-        save_replacement_config()
-        
-        embed = discord.Embed(title=f"✅ **РОЛЬ ДОБАВЛЕНА В БЕЛЫЙ СПИСОК**", description=f"Роль {role.mention} теперь не будет удаляться при замене\n\n💾 Настройка сохранена!", color=0x00ff00)
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(title=f"ℹ️ **РОЛЬ УЖЕ В БЕЛОМ СПИСКЕ**", description=f"Роль {role.mention} уже находится в белом списке", color=0xffaa00)
-        await ctx.send(embed=embed)
-
-@bot.command(name='whitelist_remove')
-@commands.has_permissions(administrator=True)
-async def whitelist_remove_command(ctx, role: discord.Role):
-    global WHITELISTED_ROLES
-    
-    if role.id in WHITELISTED_ROLES:
-        WHITELISTED_ROLES.remove(role.id)
-        save_replacement_config()
-        
-        embed = discord.Embed(title=f"✅ **РОЛЬ УБРАНА ИЗ БЕЛОГО СПИСКА**", description=f"Роль {role.mention} теперь может удаляться при замене\n\n💾 Настройка сохранена!", color=0x00ff00)
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(title=f"ℹ️ **РОЛЬ НЕ В БЕЛОМ СПИСКЕ**", description=f"Роль {role.mention} не находится в белом списке", color=0xffaa00)
-        await ctx.send(embed=embed)
-
-@bot.command(name='list_protected')
-@commands.has_permissions(administrator=True)
-async def list_protected_command(ctx):
-    embed = discord.Embed(title=f"📋 **СПИСОК ЗАЩИЩЁННЫХ РОЛЕЙ**", color=0x3498db)
-    
-    whitelist_text = ""
-    if WHITELISTED_ROLES:
-        for role_id in WHITELISTED_ROLES:
-            role = ctx.guild.get_role(role_id)
-            whitelist_text += f"• {role.mention}\n" if role else f"• Роль ID: `{role_id}` (удалена)\n"
-    else:
-        whitelist_text = "Нет ролей в белом списке"
-    
-    embed.add_field(name="🛡️ **БЕЛЫЙ СПИСОК**", value=whitelist_text, inline=False)
-    
-    replacement_text = ""
-    if REPLACEMENT_ROLES:
-        for role_id in REPLACEMENT_ROLES:
-            role = ctx.guild.get_role(role_id)
-            replacement_text += f"• {role.mention}\n" if role else f"• Роль ID: `{role_id}` (удалена)\n"
-    else:
-        replacement_text = "Нет заменяющих ролей"
-    
-    embed.add_field(name="🔄 **ЗАМЕНЯЮЩИЕ РОЛИ**", value=replacement_text, inline=False)
-    embed.set_footer(text=f"💾 Настройки сохраняются в файл {REPLACEMENT_FILE}")
-    
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !ОЧИСТИТЬИНВЕНТАРЬ ==============
-@bot.command(name='очиститьинвентарь', aliases=['clearinv', 'очистить_инвентарь'])
-@commands.has_permissions(administrator=True)
-async def clear_inventory_command(ctx, member: discord.Member = None, item_id: str = None):
-    if member is None and item_id is None and ctx.message.content.endswith('all'):
-        confirm_msg = await ctx.send("⚠️ **ВНИМАНИЕ!** Вы уверены, что хотите очистить инвентарь **ВСЕХ** пользователей?\n\nНапишите `да` в течение 30 секунд.")
-        
-        def check(m):
-            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'да'
-        
-        try:
-            await bot.wait_for('message', timeout=30.0, check=check)
-        except asyncio.TimeoutError:
-            await ctx.send("❌ Операция отменена")
-            return
-        
-        cleared_count = 0
-        for user_id in user_data:
-            if 'items' in user_data[user_id]:
-                cleared_count += len(user_data[user_id]['items'])
-                user_data[user_id]['items'] = []
-        
-        await save_data(user_data)
-        
-        embed = discord.Embed(title=f"🧹 **МАССОВАЯ ОЧИСТКА**", description=f"Инвентарь **ВСЕХ** пользователей очищен!\nУдалено предметов: **{cleared_count}**", color=0x00ff00)
-        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
-        await ctx.send(embed=embed)
-        return
-    
-    if member is None:
-        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Укажи пользователя!", color=0xff0000)
-        await ctx.send(embed=embed)
-        return
-    
-    user_id = str(member.id)
-    
-    if user_id not in user_data:
-        embed = discord.Embed(title=f"ℹ️ **НЕТ ДАННЫХ**", description=f"У {member.mention} нет данных", color=0xffaa00)
-        await ctx.send(embed=embed)
-        return
-    
-    if item_id:
-        if 'items' not in user_data[user_id] or item_id not in user_data[user_id]['items']:
-            embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"У {member.mention} нет предмета с ID `{item_id}`", color=0xff0000)
-            await ctx.send(embed=embed)
-            return
-        
-        item_name = item_id
-        if item_id in shop_data:
-            item_name = shop_data[item_id]['name']
-        
-        user_data[user_id]['items'].remove(item_id)
-        await save_data(user_data)
-        
-        embed = discord.Embed(title=f"🧹 **ПРЕДМЕТ УДАЛЁН**", description=f"Из инвентаря {member.mention} удалён предмет: **{item_name}**", color=0x00ff00)
-        embed.add_field(name="🆔 ID предмета", value=f"`{item_id}`", inline=True)
-        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
-        await ctx.send(embed=embed)
-        return
-    
-    if 'items' not in user_data[user_id] or not user_data[user_id]['items']:
-        embed = discord.Embed(title=f"ℹ️ **ПУСТОЙ ИНВЕНТАРЬ**", description=f"У {member.mention} и так пусто", color=0xffaa00)
-        await ctx.send(embed=embed)
-        return
-    
-    removed_items = user_data[user_id]['items'].copy()
-    removed_count = len(removed_items)
-    
-    user_data[user_id]['items'] = []
-    await save_data(user_data)
-    
-    embed = discord.Embed(title=f"🧹 **ИНВЕНТАРЬ ОЧИЩЕН**", description=f"Инвентарь {member.mention} полностью очищен", color=0x00ff00)
-    embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
-    embed.add_field(name="📦 Удалено предметов", value=f"**{removed_count}**", inline=True)
-    embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
-    
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !ИНВЕНТАРЬАДМИН ==============
-@bot.command(name='инвентарьадмин', aliases=['invadmin', 'посмотретьинвентарь'])
-@commands.has_permissions(administrator=True)
-async def admin_inventory_command(ctx, member: discord.Member):
-    user_id = str(member.id)
-    
-    if user_id not in user_data:
-        embed = discord.Embed(title=f"📦 **ИНВЕНТАРЬ {member.display_name}**", description=f"Нет данных", color=0xffaa00)
-        await ctx.send(embed=embed)
-        return
-    
-    items = user_data[user_id].get('items', [])
-    
-    embed = discord.Embed(title=f"📦 **ИНВЕНТАРЬ {member.display_name} (АДМИН)**", color=0x3498db)
-    embed.set_author(name=member.display_name, icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
-    
-    if not items:
-        embed.description = "Инвентарь пуст"
-    else:
-        items_text = ""
-        for item_id in items:
-            if item_id in shop_data:
-                item = shop_data[item_id]
-                items_text += f"• **{item['name']}** - ID: `{item_id}`\n"
-            else:
-                items_text += f"• Неизвестный предмет - ID: `{item_id}`\n"
-        
-        embed.description = items_text
-        embed.set_footer(text=f"📊 Всего предметов: {len(items)}")
-    
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !ПОМОЩЬ ==============
-@bot.command(name='помощь', aliases=['хелп', 'команды'])
-async def help_command(ctx):
-    users_in_system = len(user_data)
-    total_shop_items = len(shop_data)
-    
-    embed = discord.Embed(title=f"📚 **СПРАВКА ПО КОМАНДАМ**", description=f"Привет, {ctx.author.mention}!", color=0x3498db)
-    embed.set_footer(text="Discord Bot v2.0 • Разработано с ❤️")
-    embed.timestamp = datetime.now()
-    
-    if bot.user.avatar:
-        embed.set_thumbnail(url=bot.user.avatar.url)
-    
-    profile_commands = "`!ур` / `!уровень` - твой профиль\n`!ур @пользователь` - профиль другого\n`!бал` / `!баланс` - баланс коинов\n`!топы` / `!лидеры` - таблица лидеров\n`!войс` / `!вс` - статистика войса\n`!временные` / `!temp` - временные роли"
-    embed.add_field(name="👤 **ПРОФИЛЬ**", value=profile_commands, inline=False)
-    
-    shop_commands = "`!магазин` / `!shop` - открыть магазин\n`!купить [ID]` - купить предмет\n`!инвентарь` / `!inv` - инвентарь\n`!сохранённые` / `!saved` - роли на возврат"
-    embed.add_field(name="🛒 **МАГАЗИН**", value=shop_commands, inline=False)
-    
-    casino_commands = "`!казино` - список игр казино\n`!орёл [ставка]` / `!решка [ставка]` - орлянка\n`!кость [ставка] [число]` - угадай число\n`!слоты [ставка]` - игровые слоты\n`!рулетка [цвет] [ставка]` - рулетка\n`!бонус` - ежедневный бонус"
-    embed.add_field(name="🎰 **КАЗИНО**", value=casino_commands, inline=False)
-    
-    invites_commands = "`!приг` / `!приглашения` - твои приглашения\n`!приг @пользователь` - приглашения другого\n`!пригтоп` / `!топприг` - топ по приглашениям"
-    embed.add_field(name="🎟️ **ПРИГЛАШЕНИЯ**", value=invites_commands, inline=False)
-    
-    general_commands = "`!помощь` / `!хелп` - это меню\n`!падмин` - команды для админов"
-    embed.add_field(name="📋 **ОБЩЕЕ**", value=general_commands, inline=False)
-    
-    stats = f"📊 **В системе уровней:** {users_in_system}\n🛍️ **Товаров в магазине:** {total_shop_items}"
-    embed.add_field(name="📊 **СТАТИСТИКА**", value=stats, inline=False)
-    
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !ПАДМИН ==============
-@bot.command(name='падмин', aliases=['админпомощь', 'adminhelp'])
-@commands.has_permissions(administrator=True)
-async def admin_help_command(ctx):
-    embed = discord.Embed(title=f"👑 **АДМИНИСТРАТИВНЫЕ КОМАНДЫ**", description="Команды для администраторов:", color=0xff0000)
-    embed.set_footer(text="⚠️ Будьте осторожны с этими командами!")
-    embed.timestamp = datetime.now()
-    
-    role_commands = "`!выдатьроль @пользователь @роль время` - временная роль\n`!бан @пользователь` - выдать роль БАН\n`!чсс @пользователь` - выдать роль ЧСС\n`!снять @пользователь` - снять БАН/ЧСС"
-    embed.add_field(name="🎭 **УПРАВЛЕНИЕ РОЛЯМИ**", value=role_commands, inline=False)
-    
-    punish_commands = "`!пред @пользователь причина` - предупреждение\n`!преды @пользователь` - список предупреждений\n`!снятьпред @пользователь ID` - снять предупреждение\n`!очиститьпреды @пользователь` - удалить все предупреждения\n`!мут @пользователь время причина` - замутить\n`!снятьмут @пользователь` - снять мут\n`!муты` - список замученных"
-    embed.add_field(name="⚠️ **НАКАЗАНИЯ**", value=punish_commands, inline=False)
-    
-    shop_admin = "`!add_item ID цена название` - добавить товар\n`!add_temp_item ID цена минуты название` - временный товар\n`!remove_item ID` - удалить товар\n`!edit_item ID поле значение` - изменить товар\n`!set_role ID @роль` - привязать роль\n`!remove_role ID` - убрать привязку роли"
-    embed.add_field(name="🛒 **УПРАВЛЕНИЕ МАГАЗИНОМ**", value=shop_admin, inline=False)
-    
-    boost_admin = "`!set_boost @роль множитель` - настроить бустер\n`!remove_boost @роль` - убрать бустер\n`!list_boosts` - список бустеров"
-    embed.add_field(name="⚡ **НАСТРОЙКА БУСТЕРОВ**", value=boost_admin, inline=False)
-    
-    replacement_admin = "`!replacement_add @роль` - роль будет заменять другие\n`!replacement_remove @роль` - убрать из заменяющих\n`!whitelist_add @роль` - роль не будет удаляться\n`!whitelist_remove @роль` - убрать из белого списка\n`!list_protected` - показать настройки"
-    embed.add_field(name="🔄 **ЗАМЕНА РОЛЕЙ**", value=replacement_admin, inline=False)
-    
-    inventory_admin = "`!очиститьинвентарь @пользователь` - очистить инвентарь\n`!очиститьинвентарь @пользователь ID` - удалить предмет\n`!очиститьинвентарь all` - очистить ВСЕ инвентари\n`!инвентарьадмин @пользователь` - посмотреть инвентарь"
-    embed.add_field(name="📦 **УПРАВЛЕНИЕ ИНВЕНТАРЁМ**", value=inventory_admin, inline=False)
-    
-    economy_admin = "`!give_coins @пользователь количество` - выдать коины\n`!set_voice_xp количество` - изменить XP за войс\n`!reset_levels` - СБРОСИТЬ ВСЕ УРОВНИ"
-    embed.add_field(name="💰 **ЭКОНОМИКА**", value=economy_admin, inline=False)
-    
-    warning = "⚠️ **ВНИМАНИЕ:** Некоторые команды могут быть опасными!"
-    embed.add_field(name="━━━━━━━━━━━━━━━━━━", value=warning, inline=False)
-    
-    await ctx.send(embed=embed)
-
-@admin_help_command.error
-async def admin_help_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        embed = discord.Embed(title=f"❌ **ОШИБКА ДОСТУПА**", description="Эта команда доступна только администраторам!", color=0xff0000)
-        await ctx.send(embed=embed)
-
-# ============== КОМАНДА !ВЫДАТЬРОЛЬ ==============
-@bot.command(name='выдатьроль', aliases=['giverole', 'temprole'])
-@commands.has_permissions(administrator=True)
-async def give_temp_role_command(ctx, member: discord.Member, role_input: str, duration: str):
-    role = None
-    
-    try:
-        role_id = int(role_input.strip('<>@&'))
-        role = ctx.guild.get_role(role_id)
-    except:
-        role = discord.utils.get(ctx.guild.roles, name=role_input.strip('<>@&'))
-    
-    if role is None:
-        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Роль `{role_input}` не найдена!", color=0xff0000)
-        await ctx.send(embed=embed)
-        return
-    
-    duration = duration.lower()
-    minutes = 0
-    
-    try:
-        if duration.endswith('м'):
-            minutes = int(duration[:-1])
-        elif duration.endswith('ч'):
-            minutes = int(duration[:-1]) * 60
-        elif duration.endswith('д'):
-            minutes = int(duration[:-1]) * 1440
-        else:
-            minutes = int(duration)
-    except:
-        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Неправильный формат времени!", color=0xff0000)
-        await ctx.send(embed=embed)
-        return
-    
-    if minutes <= 0 or minutes > 43200:
-        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Некорректное время!", color=0xff0000)
-        await ctx.send(embed=embed)
-        return
-    
-    try:
-        saved_roles = []
-        removed_roles = []
-        
-        if role.id in REPLACEMENT_ROLES:
-            roles_to_remove = []
-            
-            for member_role in member.roles:
-                if (member_role.id not in WHITELISTED_ROLES and 
-                    member_role.id != role.id and 
-                    member_role.id != ctx.guild.id):
-                    roles_to_remove.append(member_role)
-                    saved_roles.append(member_role.id)
-            
-            if roles_to_remove:
-                for remove_role in roles_to_remove:
-                    try:
-                        await member.remove_roles(remove_role, reason=f"Замена ролями от {ctx.author}")
-                        removed_roles.append(remove_role.name)
-                    except:
-                        if remove_role.id in saved_roles:
-                            saved_roles.remove(remove_role.id)
-        
-        await member.add_roles(role, reason=f"Временная роль от {ctx.author}")
-        
-        user_id = str(member.id)
-        expires = datetime.now().timestamp() + (minutes * 60)
-        
-        if user_id not in temp_roles:
-            temp_roles[user_id] = []
-        
-        temp_role_data = {
-            'role_id': role.id,
-            'expires': expires,
-            'item_id': f"admin_{ctx.author.id}_{int(time.time())}",
-            'saved_roles': saved_roles
-        }
-        
-        role_exists = False
-        for existing_role in temp_roles[user_id]:
-            if existing_role['role_id'] == role.id:
-                existing_role['expires'] = expires
-                existing_role['saved_roles'] = saved_roles
-                role_exists = True
-                await save_temp_roles()
-                break
-        
-        if not role_exists:
-            temp_roles[user_id].append(temp_role_data)
-            await save_temp_roles()
-        
-        if minutes < 60:
-            time_str = f"{minutes} мин"
-        elif minutes < 1440:
-            time_str = f"{minutes//60} ч"
-        else:
-            time_str = f"{minutes//1440} дн"
-        
-        expire_time = datetime.fromtimestamp(expires).strftime("%d.%m.%Y %H:%M")
-        
-        embed = discord.Embed(title=f"✅ **ВРЕМЕННАЯ РОЛЬ ВЫДАНА**", color=0x00ff00)
-        embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
-        embed.add_field(name="🎭 Роль", value=role.mention, inline=True)
-        embed.add_field(name="⏰ Длительность", value=time_str, inline=True)
-        
-        if saved_roles:
-            saved_roles_names = []
-            for role_id in saved_roles[:5]:
-                saved_role = ctx.guild.get_role(role_id)
-                if saved_role:
-                    saved_roles_names.append(saved_role.name)
-            
-            embed.add_field(name="💾 **СОХРАНЁННЫЕ РОЛИ**", value=f"Будут возвращены через {time_str}\n```{', '.join(saved_roles_names)}{'...' if len(saved_roles) > 5 else ''}```", inline=False)
-        
-        embed.add_field(name="📅 Истекает", value=expire_time, inline=False)
-        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
-        embed.set_footer(text=f"По истечении времени роли вернутся автоматически")
-        embed.timestamp = datetime.now()
-        
-        await ctx.send(embed=embed)
-        
-        try:
-            dm_embed = discord.Embed(title=f"⏰ **ВРЕМЕННАЯ РОЛЬ**", description=f"Вам выдана временная роль на сервере **{ctx.guild.name}**", color=0x3498db)
-            dm_embed.add_field(name="🎭 Роль", value=role.name, inline=True)
-            dm_embed.add_field(name="⏰ Длительность", value=time_str, inline=True)
-            if saved_roles:
-                dm_embed.add_field(name="💾 Сохранённые роли", value=f"{len(saved_roles)} ролей будут возвращены", inline=False)
-            dm_embed.add_field(name="📅 Истекает", value=expire_time, inline=False)
-            dm_embed.add_field(name="👑 Администратор", value=ctx.author.name, inline=True)
-            await member.send(embed=dm_embed)
-        except:
-            pass
-        
-    except discord.Forbidden:
-        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"У бота нет прав на выдачу/удаление ролей!", color=0xff0000)
-        await ctx.send(embed=embed)
-    except Exception as e:
-        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Произошла ошибка: {e}", color=0xff0000)
-        await ctx.send(embed=embed)
-
-# ============== КОМАНДА !СОХРАНЁННЫЕ ==============
-@bot.command(name='сохранённые', aliases=['saved', 'хранимые'])
-async def saved_roles_command(ctx, member: discord.Member = None):
-    if member is None:
-        member = ctx.author
-    
-    user_id = str(member.id)
-    
-    if user_id not in temp_roles or not temp_roles[user_id]:
-        embed = discord.Embed(title=f"💾 **СОХРАНЁННЫЕ РОЛИ**", description=f"У {member.mention} нет ролей, ожидающих возврата", color=0xff0000)
-        await ctx.send(embed=embed)
-        return
-    
-    embed = discord.Embed(title=f"💾 **СОХРАНЁННЫЕ РОЛИ {member.display_name}**", color=0x3498db)
-    embed.set_author(name=member.display_name, icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
-    
-    current_time = datetime.now().timestamp()
-    saved_text = ""
-    
-    for role_data in temp_roles[user_id]:
-        if 'saved_roles' in role_data and role_data['saved_roles']:
-            temp_role = ctx.guild.get_role(role_data['role_id'])
-            temp_role_name = temp_role.name if temp_role else "Неизвестная роль"
-            
-            time_left = role_data['expires'] - current_time
-            if time_left > 0:
-                hours = int(time_left // 3600)
-                minutes = int((time_left % 3600) // 60)
-                time_str = f"{hours} ч {minutes} мин" if hours > 0 else f"{minutes} мин"
-                
-                saved_text += f"**Временная роль:** {temp_role_name}\n⏰ Осталось: {time_str}\n📋 Роли к возврату:\n"
-                
-                for saved_role_id in role_data['saved_roles'][:5]:
-                    saved_role = ctx.guild.get_role(saved_role_id)
-                    if saved_role:
-                        saved_text += f"  • {saved_role.name}\n"
-                
-                if len(role_data['saved_roles']) > 5:
-                    saved_text += f"  • ... и ещё {len(role_data['saved_roles']) - 5}\n"
-                
-                saved_text += "\n"
-    
-    if saved_text:
-        embed.description = saved_text
-    else:
-        embed.description = "Нет ролей, ожидающих возврата"
-    
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !СБРОСИТЬУРОВНИ ==============
-@bot.command(name='reset_levels', aliases=['сброситьуровни', 'resetlevels'])
-@commands.has_permissions(administrator=True)
-async def reset_levels_command(ctx):
-    confirm_msg = await ctx.send("⚠️ **ВНИМАНИЕ!** Вы уверены, что хотите сбросить **ВСЕ УРОВНИ** всех пользователей?\n\nНапишите `да` в течение 30 секунд.")
-    
-    def check(m):
-        return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'да'
-    
-    try:
-        await bot.wait_for('message', timeout=30.0, check=check)
-    except asyncio.TimeoutError:
-        await ctx.send("❌ Операция отменена")
-        return
-    
-    global user_data
-    user_data.clear()
-    await save_data(user_data)
-    
-    global warns_data
-    warns_data.clear()
-    
-    embed = discord.Embed(title=f"✅ **ДАННЫЕ СБРОШЕНЫ**", description=f"Все уровни и предупреждения очищены!", color=0x00ff00)
-    embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !GIVE_COINS ==============
-@bot.command(name='give_coins')
-@commands.has_permissions(administrator=True)
-async def give_coins_command(ctx, member: discord.Member, amount: int):
-    user_id = str(member.id)
-    
-    if user_id not in user_data:
-        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(member), 'items': []}
-    
-    user_data[user_id]['coins'] += amount
-    user_data[user_id]['total_coins_earned'] += amount
-    await save_data(user_data)
-    
-    embed = discord.Embed(title=f"✅ **КОИНЫ ВЫДАНЫ**", description=f"{member.mention} получил **{amount}** 🪙!", color=0x00ff00)
-    embed.add_field(name="💰 Новый баланс", value=f"**{user_data[user_id]['coins']}** 🪙", inline=False)
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !SET_VOICE_XP ==============
-@bot.command(name='set_voice_xp')
-@commands.has_permissions(administrator=True)
-async def set_voice_xp_command(ctx, xp_per_minute: int):
-    global XP_PER_VOICE_MINUTE
-    XP_PER_VOICE_MINUTE = xp_per_minute
-    
-    embed = discord.Embed(title=f"⚡ **НАСТРОЙКИ ИЗМЕНЕНЫ**", description=f"Опыт за минуту в войсе установлен: **{xp_per_minute} XP**", color=0x00ff00)
-    await ctx.send(embed=embed)
-
+# ============== КОМАНДА !ПРИГ ==============
 @bot.command(name='приг', aliases=['invites', 'приглашения'])
 async def invites_command(ctx, member: discord.Member = None):
     if member is None:
@@ -2668,6 +2150,48 @@ async def invites_command(ctx, member: discord.Member = None):
     
     await ctx.send(embed=embed)
 
+# ============== КОМАНДА !ПРИГТОП ==============
+@bot.command(name='пригтоп', aliases=['topinvites', 'топприг'])
+async def top_invites_command(ctx, page: int = 1):
+    if not invites_data:
+        embed = discord.Embed(title=f"🏆 **ТОП ПРИГЛАШЕНИЙ**", description="Пока нет данных о приглашениях", color=0xffaa00)
+        await ctx.send(embed=embed)
+        return
+    
+    sorted_users = sorted(invites_data.items(), key=lambda x: x[1]['invites'], reverse=True)
+    
+    items_per_page = 10
+    total_pages = math.ceil(len(sorted_users) / items_per_page)
+    page = max(1, min(page, total_pages))
+    
+    start_idx = (page - 1) * items_per_page
+    end_idx = start_idx + items_per_page
+    page_users = sorted_users[start_idx:end_idx]
+    
+    embed = discord.Embed(title=f"🏆 **ТОП ПРИГЛАШЕНИЙ**", description=f"Страница {page}/{total_pages}", color=0xffd700)
+    
+    top_text = ""
+    for i, (user_id, data) in enumerate(page_users, start=start_idx + 1):
+        member = ctx.guild.get_member(int(user_id))
+        username = member.display_name if member else data.get('username', 'Неизвестный')
+        
+        if i == 1:
+            medal = "🥇"
+        elif i == 2:
+            medal = "🥈"
+        elif i == 3:
+            medal = "🥉"
+        else:
+            medal = f"{i}."
+        
+        invites = data['invites']
+        top_text += f"{medal} **{username}** — **{invites}** приг.\n"
+    
+    embed.description = top_text
+    embed.set_footer(text=f"📊 Всего участников: {len(sorted_users)}")
+    
+    await ctx.send(embed=embed)
+
 # ============== КОМАНДА !ПРИГРОЛЬ ==============
 @bot.command(name='пригроль', aliases=['inviterole', 'пригроли'])
 @commands.has_permissions(administrator=True)
@@ -2705,7 +2229,6 @@ async def inviterole_command(ctx, role: discord.Role, invites: int):
     
     await ctx.send(embed=embed)
 
-
 @bot.command(name='пригрольудалить', aliases=['removerole', 'удалитьрольприг'])
 @commands.has_permissions(administrator=True)
 async def inviterole_remove_command(ctx, invites: int):
@@ -2736,7 +2259,6 @@ async def inviterole_remove_command(ctx, invites: int):
         )
     
     await ctx.send(embed=embed)
-
 
 @bot.command(name='пригролисписок', aliases=['listroles', 'списокролейприг'])
 @commands.has_permissions(administrator=True)
@@ -2822,101 +2344,6 @@ async def reset_specific_invites_command(ctx, member: discord.Member, amount: in
     
     embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
     await ctx.send(embed=embed)
-
-# ============== КОМАНДА !ПРИГТОП ==============
-@bot.command(name='пригтоп', aliases=['topinvites', 'топприг'])
-async def top_invites_command(ctx, page: int = 1):
-    if not invites_data:
-        embed = discord.Embed(title=f"🏆 **ТОП ПРИГЛАШЕНИЙ**", description="Пока нет данных о приглашениях", color=0xffaa00)
-        await ctx.send(embed=embed)
-        return
-    
-    sorted_users = sorted(invites_data.items(), key=lambda x: x[1]['invites'], reverse=True)
-    
-    items_per_page = 10
-    total_pages = math.ceil(len(sorted_users) / items_per_page)
-    page = max(1, min(page, total_pages))
-    
-    start_idx = (page - 1) * items_per_page
-    end_idx = start_idx + items_per_page
-    page_users = sorted_users[start_idx:end_idx]
-    
-    embed = discord.Embed(title=f"🏆 **ТОП ПРИГЛАШЕНИЙ**", description=f"Страница {page}/{total_pages}", color=0xffd700)
-    
-    top_text = ""
-    for i, (user_id, data) in enumerate(page_users, start=start_idx + 1):
-        member = ctx.guild.get_member(int(user_id))
-        username = member.display_name if member else data.get('username', 'Неизвестный')
-        
-        if i == 1:
-            medal = "🥇"
-        elif i == 2:
-            medal = "🥈"
-        elif i == 3:
-            medal = "🥉"
-        else:
-            medal = f"{i}."
-        
-        invites = data['invites']
-        top_text += f"{medal} **{username}** — **{invites}** приг.\n"
-    
-    embed.description = top_text
-    embed.set_footer(text=f"📊 Всего участников: {len(sorted_users)}")
-    
-    await ctx.send(embed=embed)
-
-# ============== КОМАНДА !СБРОСИТЬПРИГ ==============
-@bot.command(name='сброситьприг', aliases=['resetinvites'])
-@commands.has_permissions(administrator=True)
-async def reset_invites_command(ctx, member: discord.Member = None):
-    if member is None and ctx.message.content.endswith('all'):
-        confirm_msg = await ctx.send("⚠️ **ВНИМАНИЕ!** Вы уверены, что хотите сбросить **ВСЕ** приглашения?\n\nНапишите `да` в течение 30 секунд.")
-        
-        def check(m):
-            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'да'
-        
-        try:
-            await bot.wait_for('message', timeout=30.0, check=check)
-        except asyncio.TimeoutError:
-            await ctx.send("❌ Операция отменена")
-            return
-        
-        global invites_data
-        invites_data = {}
-        await save_invites()
-        
-        embed = discord.Embed(title=f"✅ **ПРИГЛАШЕНИЯ СБРОШЕНЫ**", description=f"Все приглашения всех пользователей сброшены!", color=0x00ff00)
-        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
-        await ctx.send(embed=embed)
-        return
-    
-    if member is None:
-        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Укажи пользователя: `!сброситьприг @пользователь`\nИли `!сброситьприг all`", color=0xff0000)
-        await ctx.send(embed=embed)
-        return
-    
-    user_id = str(member.id)
-    
-    if user_id in invites_data:
-        old_count = invites_data[user_id]['invites']
-        del invites_data[user_id]
-        await save_invites()
-        
-        for role_id in INVITE_ROLES.values():
-            if role_id:
-                role = ctx.guild.get_role(role_id)
-                if role and role in member.roles:
-                    try:
-                        await member.remove_roles(role, reason="Сброс приглашений")
-                    except:
-                        pass
-        
-        embed = discord.Embed(title=f"✅ **ПРИГЛАШЕНИЯ СБРОШЕНЫ**", description=f"У {member.mention} сброшено {old_count} приглашений", color=0x00ff00)
-        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
-        await ctx.send(embed=embed)
-    else:
-        embed = discord.Embed(title=f"ℹ️ **НЕТ ДАННЫХ**", description=f"У {member.mention} нет приглашений", color=0xffaa00)
-        await ctx.send(embed=embed)
 
 # ============== КОМАНДА !КАЗИНО ==============
 @bot.command(name='казино', aliases=['casino', 'игры'])
@@ -3366,6 +2793,529 @@ async def remove_role_command(ctx, item_id: str):
         embed = discord.Embed(title=f"🔴 Ошибка", description=f"У товара **{shop_data[item_id]['name']}** нет привязанной роли!", color=0xff0000)
         await ctx.send(embed=embed)
 
+# ============== КОМАНДА !ВЫДАТЬРОЛЬ ==============
+@bot.command(name='выдатьроль', aliases=['giverole', 'temprole'])
+@commands.has_permissions(administrator=True)
+async def give_temp_role_command(ctx, member: discord.Member, role_input: str, duration: str):
+    role = None
+    
+    try:
+        role_id = int(role_input.strip('<>@&'))
+        role = ctx.guild.get_role(role_id)
+    except:
+        role = discord.utils.get(ctx.guild.roles, name=role_input.strip('<>@&'))
+    
+    if role is None:
+        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Роль `{role_input}` не найдена!", color=0xff0000)
+        await ctx.send(embed=embed)
+        return
+    
+    duration = duration.lower()
+    minutes = 0
+    
+    try:
+        if duration.endswith('м'):
+            minutes = int(duration[:-1])
+        elif duration.endswith('ч'):
+            minutes = int(duration[:-1]) * 60
+        elif duration.endswith('д'):
+            minutes = int(duration[:-1]) * 1440
+        else:
+            minutes = int(duration)
+    except:
+        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Неправильный формат времени!", color=0xff0000)
+        await ctx.send(embed=embed)
+        return
+    
+    if minutes <= 0 or minutes > 43200:
+        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Некорректное время!", color=0xff0000)
+        await ctx.send(embed=embed)
+        return
+    
+    try:
+        saved_roles = []
+        removed_roles = []
+        
+        if role.id in REPLACEMENT_ROLES:
+            roles_to_remove = []
+            
+            for member_role in member.roles:
+                if (member_role.id not in WHITELISTED_ROLES and 
+                    member_role.id != role.id and 
+                    member_role.id != ctx.guild.id):
+                    roles_to_remove.append(member_role)
+                    saved_roles.append(member_role.id)
+            
+            if roles_to_remove:
+                for remove_role in roles_to_remove:
+                    try:
+                        await member.remove_roles(remove_role, reason=f"Замена ролями от {ctx.author}")
+                        removed_roles.append(remove_role.name)
+                    except:
+                        if remove_role.id in saved_roles:
+                            saved_roles.remove(remove_role.id)
+        
+        await member.add_roles(role, reason=f"Временная роль от {ctx.author}")
+        
+        user_id = str(member.id)
+        expires = datetime.now().timestamp() + (minutes * 60)
+        
+        if user_id not in temp_roles:
+            temp_roles[user_id] = []
+        
+        temp_role_data = {
+            'role_id': role.id,
+            'expires': expires,
+            'item_id': f"admin_{ctx.author.id}_{int(time.time())}",
+            'saved_roles': saved_roles
+        }
+        
+        role_exists = False
+        for existing_role in temp_roles[user_id]:
+            if existing_role['role_id'] == role.id:
+                existing_role['expires'] = expires
+                existing_role['saved_roles'] = saved_roles
+                role_exists = True
+                await save_temp_roles()
+                break
+        
+        if not role_exists:
+            temp_roles[user_id].append(temp_role_data)
+            await save_temp_roles()
+        
+        if minutes < 60:
+            time_str = f"{minutes} мин"
+        elif minutes < 1440:
+            time_str = f"{minutes//60} ч"
+        else:
+            time_str = f"{minutes//1440} дн"
+        
+        expire_time = datetime.fromtimestamp(expires).strftime("%d.%m.%Y %H:%M")
+        
+        embed = discord.Embed(title=f"✅ **ВРЕМЕННАЯ РОЛЬ ВЫДАНА**", color=0x00ff00)
+        embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
+        embed.add_field(name="🎭 Роль", value=role.mention, inline=True)
+        embed.add_field(name="⏰ Длительность", value=time_str, inline=True)
+        
+        if saved_roles:
+            saved_roles_names = []
+            for role_id in saved_roles[:5]:
+                saved_role = ctx.guild.get_role(role_id)
+                if saved_role:
+                    saved_roles_names.append(saved_role.name)
+            
+            embed.add_field(name="💾 **СОХРАНЁННЫЕ РОЛИ**", value=f"Будут возвращены через {time_str}\n```{', '.join(saved_roles_names)}{'...' if len(saved_roles) > 5 else ''}```", inline=False)
+        
+        embed.add_field(name="📅 Истекает", value=expire_time, inline=False)
+        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
+        embed.set_footer(text=f"По истечении времени роли вернутся автоматически")
+        embed.timestamp = datetime.now()
+        
+        await ctx.send(embed=embed)
+        
+        try:
+            dm_embed = discord.Embed(title=f"⏰ **ВРЕМЕННАЯ РОЛЬ**", description=f"Вам выдана временная роль на сервере **{ctx.guild.name}**", color=0x3498db)
+            dm_embed.add_field(name="🎭 Роль", value=role.name, inline=True)
+            dm_embed.add_field(name="⏰ Длительность", value=time_str, inline=True)
+            if saved_roles:
+                dm_embed.add_field(name="💾 Сохранённые роли", value=f"{len(saved_roles)} ролей будут возвращены", inline=False)
+            dm_embed.add_field(name="📅 Истекает", value=expire_time, inline=False)
+            dm_embed.add_field(name="👑 Администратор", value=ctx.author.name, inline=True)
+            await member.send(embed=dm_embed)
+        except:
+            pass
+        
+    except discord.Forbidden:
+        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"У бота нет прав на выдачу/удаление ролей!", color=0xff0000)
+        await ctx.send(embed=embed)
+    except Exception as e:
+        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Произошла ошибка: {e}", color=0xff0000)
+        await ctx.send(embed=embed)
+
+# ============== КОМАНДА !СОХРАНЁННЫЕ ==============
+@bot.command(name='сохранённые', aliases=['saved', 'хранимые'])
+async def saved_roles_command(ctx, member: discord.Member = None):
+    if member is None:
+        member = ctx.author
+    
+    user_id = str(member.id)
+    
+    if user_id not in temp_roles or not temp_roles[user_id]:
+        embed = discord.Embed(title=f"💾 **СОХРАНЁННЫЕ РОЛИ**", description=f"У {member.mention} нет ролей, ожидающих возврата", color=0xff0000)
+        await ctx.send(embed=embed)
+        return
+    
+    embed = discord.Embed(title=f"💾 **СОХРАНЁННЫЕ РОЛИ {member.display_name}**", color=0x3498db)
+    embed.set_author(name=member.display_name, icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
+    
+    current_time = datetime.now().timestamp()
+    saved_text = ""
+    
+    for role_data in temp_roles[user_id]:
+        if 'saved_roles' in role_data and role_data['saved_roles']:
+            temp_role = ctx.guild.get_role(role_data['role_id'])
+            temp_role_name = temp_role.name if temp_role else "Неизвестная роль"
+            
+            time_left = role_data['expires'] - current_time
+            if time_left > 0:
+                hours = int(time_left // 3600)
+                minutes = int((time_left % 3600) // 60)
+                time_str = f"{hours} ч {minutes} мин" if hours > 0 else f"{minutes} мин"
+                
+                saved_text += f"**Временная роль:** {temp_role_name}\n⏰ Осталось: {time_str}\n📋 Роли к возврату:\n"
+                
+                for saved_role_id in role_data['saved_roles'][:5]:
+                    saved_role = ctx.guild.get_role(saved_role_id)
+                    if saved_role:
+                        saved_text += f"  • {saved_role.name}\n"
+                
+                if len(role_data['saved_roles']) > 5:
+                    saved_text += f"  • ... и ещё {len(role_data['saved_roles']) - 5}\n"
+                
+                saved_text += "\n"
+    
+    if saved_text:
+        embed.description = saved_text
+    else:
+        embed.description = "Нет ролей, ожидающих возврата"
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !ОЧИСТИТЬИНВЕНТАРЬ ==============
+@bot.command(name='очиститьинвентарь', aliases=['clearinv', 'очистить_инвентарь'])
+@commands.has_permissions(administrator=True)
+async def clear_inventory_command(ctx, member: discord.Member = None, item_id: str = None):
+    if member is None and item_id is None and ctx.message.content.endswith('all'):
+        confirm_msg = await ctx.send("⚠️ **ВНИМАНИЕ!** Вы уверены, что хотите очистить инвентарь **ВСЕХ** пользователей?\n\nНапишите `да` в течение 30 секунд.")
+        
+        def check(m):
+            return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'да'
+        
+        try:
+            await bot.wait_for('message', timeout=30.0, check=check)
+        except asyncio.TimeoutError:
+            await ctx.send("❌ Операция отменена")
+            return
+        
+        cleared_count = 0
+        for user_id in user_data:
+            if 'items' in user_data[user_id]:
+                cleared_count += len(user_data[user_id]['items'])
+                user_data[user_id]['items'] = []
+        
+        await save_data(user_data)
+        
+        embed = discord.Embed(title=f"🧹 **МАССОВАЯ ОЧИСТКА**", description=f"Инвентарь **ВСЕХ** пользователей очищен!\nУдалено предметов: **{cleared_count}**", color=0x00ff00)
+        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
+        await ctx.send(embed=embed)
+        return
+    
+    if member is None:
+        embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"Укажи пользователя!", color=0xff0000)
+        await ctx.send(embed=embed)
+        return
+    
+    user_id = str(member.id)
+    
+    if user_id not in user_data:
+        embed = discord.Embed(title=f"ℹ️ **НЕТ ДАННЫХ**", description=f"У {member.mention} нет данных", color=0xffaa00)
+        await ctx.send(embed=embed)
+        return
+    
+    if item_id:
+        if 'items' not in user_data[user_id] or item_id not in user_data[user_id]['items']:
+            embed = discord.Embed(title=f"❌ **ОШИБКА**", description=f"У {member.mention} нет предмета с ID `{item_id}`", color=0xff0000)
+            await ctx.send(embed=embed)
+            return
+        
+        item_name = item_id
+        if item_id in shop_data:
+            item_name = shop_data[item_id]['name']
+        
+        user_data[user_id]['items'].remove(item_id)
+        await save_data(user_data)
+        
+        embed = discord.Embed(title=f"🧹 **ПРЕДМЕТ УДАЛЁН**", description=f"Из инвентаря {member.mention} удалён предмет: **{item_name}**", color=0x00ff00)
+        embed.add_field(name="🆔 ID предмета", value=f"`{item_id}`", inline=True)
+        embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
+        await ctx.send(embed=embed)
+        return
+    
+    if 'items' not in user_data[user_id] or not user_data[user_id]['items']:
+        embed = discord.Embed(title=f"ℹ️ **ПУСТОЙ ИНВЕНТАРЬ**", description=f"У {member.mention} и так пусто", color=0xffaa00)
+        await ctx.send(embed=embed)
+        return
+    
+    removed_items = user_data[user_id]['items'].copy()
+    removed_count = len(removed_items)
+    
+    user_data[user_id]['items'] = []
+    await save_data(user_data)
+    
+    embed = discord.Embed(title=f"🧹 **ИНВЕНТАРЬ ОЧИЩЕН**", description=f"Инвентарь {member.mention} полностью очищен", color=0x00ff00)
+    embed.add_field(name="👤 Пользователь", value=member.mention, inline=True)
+    embed.add_field(name="📦 Удалено предметов", value=f"**{removed_count}**", inline=True)
+    embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !ИНВЕНТАРЬАДМИН ==============
+@bot.command(name='инвентарьадмин', aliases=['invadmin', 'посмотретьинвентарь'])
+@commands.has_permissions(administrator=True)
+async def admin_inventory_command(ctx, member: discord.Member):
+    user_id = str(member.id)
+    
+    if user_id not in user_data:
+        embed = discord.Embed(title=f"📦 **ИНВЕНТАРЬ {member.display_name}**", description=f"Нет данных", color=0xffaa00)
+        await ctx.send(embed=embed)
+        return
+    
+    items = user_data[user_id].get('items', [])
+    
+    embed = discord.Embed(title=f"📦 **ИНВЕНТАРЬ {member.display_name} (АДМИН)**", color=0x3498db)
+    embed.set_author(name=member.display_name, icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
+    
+    if not items:
+        embed.description = "Инвентарь пуст"
+    else:
+        items_text = ""
+        for item_id in items:
+            if item_id in shop_data:
+                item = shop_data[item_id]
+                items_text += f"• **{item['name']}** - ID: `{item_id}`\n"
+            else:
+                items_text += f"• Неизвестный предмет - ID: `{item_id}`\n"
+        
+        embed.description = items_text
+        embed.set_footer(text=f"📊 Всего предметов: {len(items)}")
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !ПОМОЩЬ ==============
+@bot.command(name='помощь', aliases=['хелп', 'команды'])
+async def help_command(ctx):
+    users_in_system = len(user_data)
+    total_shop_items = len(shop_data)
+    
+    # Считаем реальных пользователей на сервере
+    real_users = 0
+    for guild in bot.guilds:
+        for member in guild.members:
+            if not member.bot:
+                real_users += 1
+    
+    embed = discord.Embed(title=f"📚 **СПРАВКА ПО КОМАНДАМ**", description=f"Привет, {ctx.author.mention}!", color=0x3498db)
+    embed.set_footer(text="Discord Bot v2.0 • Разработано с ❤️")
+    embed.timestamp = datetime.now()
+    
+    if bot.user.avatar:
+        embed.set_thumbnail(url=bot.user.avatar.url)
+    
+    profile_commands = "`!ур` / `!уровень` - твой профиль\n`!ур @пользователь` - профиль другого\n`!бал` / `!баланс` - баланс коинов\n`!топы` / `!лидеры` - таблица лидеров\n`!войс` / `!вс` - статистика войса\n`!временные` / `!temp` - временные роли"
+    embed.add_field(name="👤 **ПРОФИЛЬ**", value=profile_commands, inline=False)
+    
+    shop_commands = "`!магазин` / `!shop` - открыть магазин\n`!купить [ID]` - купить предмет\n`!инвентарь` / `!inv` - инвентарь\n`!сохранённые` / `!saved` - роли на возврат"
+    embed.add_field(name="🛒 **МАГАЗИН**", value=shop_commands, inline=False)
+    
+    casino_commands = "`!казино` - список игр казино\n`!орёл [ставка]` / `!решка [ставка]` - орлянка\n`!кость [ставка] [число]` - угадай число\n`!слоты [ставка]` - игровые слоты\n`!рулетка [цвет] [ставка]` - рулетка\n`!бонус` - ежедневный бонус"
+    embed.add_field(name="🎰 **КАЗИНО**", value=casino_commands, inline=False)
+    
+    invites_commands = "`!приг` / `!приглашения` - твои приглашения\n`!приг @пользователь` - приглашения другого\n`!пригтоп` / `!топприг` - топ по приглашениям"
+    embed.add_field(name="🎟️ **ПРИГЛАШЕНИЯ**", value=invites_commands, inline=False)
+    
+    general_commands = "`!помощь` / `!хелп` - это меню\n`!падмин` - команды для админов"
+    embed.add_field(name="📋 **ОБЩЕЕ**", value=general_commands, inline=False)
+    
+    stats = f"👥 **На сервере:** {real_users} чел.\n📊 **В системе:** {users_in_system} игроков\n🛍️ **Товаров:** {total_shop_items}"
+    embed.add_field(name="📊 **СТАТИСТИКА**", value=stats, inline=False)
+    
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !ПАДМИН ==============
+@bot.command(name='падмин', aliases=['админпомощь', 'adminhelp'])
+@commands.has_permissions(administrator=True)
+async def admin_help_command(ctx):
+    embed = discord.Embed(title=f"👑 **АДМИНИСТРАТИВНЫЕ КОМАНДЫ**", description="Команды для администраторов:", color=0xff0000)
+    embed.set_footer(text="⚠️ Будьте осторожны с этими командами!")
+    embed.timestamp = datetime.now()
+    
+    role_commands = "`!выдатьроль @пользователь @роль время` - временная роль\n`!бан @пользователь` - выдать роль БАН\n`!чсс @пользователь` - выдать роль ЧСС\n`!снять @пользователь` - снять БАН/ЧСС"
+    embed.add_field(name="🎭 **УПРАВЛЕНИЕ РОЛЯМИ**", value=role_commands, inline=False)
+    
+    punish_commands = "`!пред @пользователь причина` - предупреждение\n`!преды @пользователь` - список предупреждений\n`!снятьпред @пользователь ID` - снять предупреждение\n`!очиститьпреды @пользователь` - удалить все предупреждения\n`!мут @пользователь время причина` - замутить\n`!снятьмут @пользователь` - снять мут\n`!муты` - список замученных"
+    embed.add_field(name="⚠️ **НАКАЗАНИЯ**", value=punish_commands, inline=False)
+    
+    shop_admin = "`!add_item ID цена название` - добавить товар\n`!add_temp_item ID цена минуты название` - временный товар\n`!remove_item ID` - удалить товар\n`!edit_item ID поле значение` - изменить товар\n`!set_role ID @роль` - привязать роль\n`!remove_role ID` - убрать привязку роли"
+    embed.add_field(name="🛒 **УПРАВЛЕНИЕ МАГАЗИНОМ**", value=shop_admin, inline=False)
+    
+    boost_admin = "`!set_boost @роль множитель` - настроить бустер\n`!remove_boost @роль` - убрать бустер\n`!list_boosts` - список бустеров"
+    embed.add_field(name="⚡ **НАСТРОЙКА БУСТЕРОВ**", value=boost_admin, inline=False)
+    
+    invites_admin = "`!пригроль @роль количество` - установить роль за приглашения\n`!пригрольудалить количество` - удалить роль\n`!пригролисписок` - список ролей\n`!пригсбросить @пользователь` - сбросить приглашения"
+    embed.add_field(name="🎟️ **ПРИГЛАШЕНИЯ**", value=invites_admin, inline=False)
+    
+    replacement_admin = "`!replacement_add @роль` - роль будет заменять другие\n`!replacement_remove @роль` - убрать из заменяющих\n`!whitelist_add @роль` - роль не будет удаляться\n`!whitelist_remove @роль` - убрать из белого списка\n`!list_protected` - показать настройки"
+    embed.add_field(name="🔄 **ЗАМЕНА РОЛЕЙ**", value=replacement_admin, inline=False)
+    
+    inventory_admin = "`!очиститьинвентарь @пользователь` - очистить инвентарь\n`!очиститьинвентарь @пользователь ID` - удалить предмет\n`!очиститьинвентарь all` - очистить ВСЕ инвентари\n`!инвентарьадмин @пользователь` - посмотреть инвентарь"
+    embed.add_field(name="📦 **УПРАВЛЕНИЕ ИНВЕНТАРЁМ**", value=inventory_admin, inline=False)
+    
+    economy_admin = "`!give_coins @пользователь количество` - выдать коины\n`!set_voice_xp количество` - изменить XP за войс\n`!reset_levels` - СБРОСИТЬ ВСЕ УРОВНИ"
+    embed.add_field(name="💰 **ЭКОНОМИКА**", value=economy_admin, inline=False)
+    
+    warning = "⚠️ **ВНИМАНИЕ:** Некоторые команды могут быть опасными!"
+    embed.add_field(name="━━━━━━━━━━━━━━━━━━", value=warning, inline=False)
+    
+    await ctx.send(embed=embed)
+
+@admin_help_command.error
+async def admin_help_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        embed = discord.Embed(title=f"❌ **ОШИБКА ДОСТУПА**", description="Эта команда доступна только администраторам!", color=0xff0000)
+        await ctx.send(embed=embed)
+
+# ============== КОМАНДА !СБРОСИТЬУРОВНИ ==============
+@bot.command(name='reset_levels', aliases=['сброситьуровни', 'resetlevels'])
+@commands.has_permissions(administrator=True)
+async def reset_levels_command(ctx):
+    confirm_msg = await ctx.send("⚠️ **ВНИМАНИЕ!** Вы уверены, что хотите сбросить **ВСЕ УРОВНИ** всех пользователей?\n\nНапишите `да` в течение 30 секунд.")
+    
+    def check(m):
+        return m.author == ctx.author and m.channel == ctx.channel and m.content.lower() == 'да'
+    
+    try:
+        await bot.wait_for('message', timeout=30.0, check=check)
+    except asyncio.TimeoutError:
+        await ctx.send("❌ Операция отменена")
+        return
+    
+    global user_data
+    user_data.clear()
+    await save_data(user_data)
+    
+    global warns_data
+    warns_data.clear()
+    
+    embed = discord.Embed(title=f"✅ **ДАННЫЕ СБРОШЕНЫ**", description=f"Все уровни и предупреждения очищены!", color=0x00ff00)
+    embed.add_field(name="👑 Администратор", value=ctx.author.mention, inline=True)
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !GIVE_COINS ==============
+@bot.command(name='give_coins')
+@commands.has_permissions(administrator=True)
+async def give_coins_command(ctx, member: discord.Member, amount: int):
+    user_id = str(member.id)
+    
+    if user_id not in user_data:
+        user_data[user_id] = {'coins': 0, 'total_coins_earned': 0, 'username': str(member), 'items': []}
+    
+    user_data[user_id]['coins'] += amount
+    user_data[user_id]['total_coins_earned'] += amount
+    await save_data(user_data)
+    
+    embed = discord.Embed(title=f"✅ **КОИНЫ ВЫДАНЫ**", description=f"{member.mention} получил **{amount}** 🪙!", color=0x00ff00)
+    embed.add_field(name="💰 Новый баланс", value=f"**{user_data[user_id]['coins']}** 🪙", inline=False)
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДА !SET_VOICE_XP ==============
+@bot.command(name='set_voice_xp')
+@commands.has_permissions(administrator=True)
+async def set_voice_xp_command(ctx, xp_per_minute: int):
+    global XP_PER_VOICE_MINUTE
+    XP_PER_VOICE_MINUTE = xp_per_minute
+    
+    embed = discord.Embed(title=f"⚡ **НАСТРОЙКИ ИЗМЕНЕНЫ**", description=f"Опыт за минуту в войсе установлен: **{xp_per_minute} XP**", color=0x00ff00)
+    await ctx.send(embed=embed)
+
+# ============== КОМАНДЫ ДЛЯ ЗАМЕНЫ РОЛЕЙ ==============
+@bot.command(name='replacement_add')
+@commands.has_permissions(administrator=True)
+async def replacement_add_command(ctx, role: discord.Role):
+    global REPLACEMENT_ROLES
+    
+    if role.id not in REPLACEMENT_ROLES:
+        REPLACEMENT_ROLES.append(role.id)
+        save_replacement_config()
+        
+        embed = discord.Embed(title=f"✅ **РОЛЬ ДОБАВЛЕНА В ЗАМЕНЯЮЩИЕ**", description=f"При выдаче роли {role.mention} будут удаляться все остальные роли (кроме белого списка)\n\n💾 Настройка сохранена!", color=0x00ff00)
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(title=f"ℹ️ **РОЛЬ УЖЕ В ЗАМЕНЯЮЩИХ**", description=f"Роль {role.mention} уже находится в списке заменяющих", color=0xffaa00)
+        await ctx.send(embed=embed)
+
+@bot.command(name='replacement_remove')
+@commands.has_permissions(administrator=True)
+async def replacement_remove_command(ctx, role: discord.Role):
+    global REPLACEMENT_ROLES
+    
+    if role.id in REPLACEMENT_ROLES:
+        REPLACEMENT_ROLES.remove(role.id)
+        save_replacement_config()
+        
+        embed = discord.Embed(title=f"✅ **РОЛЬ УБРАНА ИЗ ЗАМЕНЯЮЩИХ**", description=f"Роль {role.mention} больше не будет удалять другие роли при выдаче\n\n💾 Настройка сохранена!", color=0x00ff00)
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(title=f"ℹ️ **РОЛЬ НЕ В ЗАМЕНЯЮЩИХ**", description=f"Роль {role.mention} не находится в списке заменяющих", color=0xffaa00)
+        await ctx.send(embed=embed)
+
+@bot.command(name='whitelist_add')
+@commands.has_permissions(administrator=True)
+async def whitelist_add_command(ctx, role: discord.Role):
+    global WHITELISTED_ROLES
+    
+    if role.id not in WHITELISTED_ROLES:
+        WHITELISTED_ROLES.append(role.id)
+        save_replacement_config()
+        
+        embed = discord.Embed(title=f"✅ **РОЛЬ ДОБАВЛЕНА В БЕЛЫЙ СПИСОК**", description=f"Роль {role.mention} теперь не будет удаляться при замене\n\n💾 Настройка сохранена!", color=0x00ff00)
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(title=f"ℹ️ **РОЛЬ УЖЕ В БЕЛОМ СПИСКЕ**", description=f"Роль {role.mention} уже находится в белом списке", color=0xffaa00)
+        await ctx.send(embed=embed)
+
+@bot.command(name='whitelist_remove')
+@commands.has_permissions(administrator=True)
+async def whitelist_remove_command(ctx, role: discord.Role):
+    global WHITELISTED_ROLES
+    
+    if role.id in WHITELISTED_ROLES:
+        WHITELISTED_ROLES.remove(role.id)
+        save_replacement_config()
+        
+        embed = discord.Embed(title=f"✅ **РОЛЬ УБРАНА ИЗ БЕЛОГО СПИСКА**", description=f"Роль {role.mention} теперь может удаляться при замене\n\n💾 Настройка сохранена!", color=0x00ff00)
+        await ctx.send(embed=embed)
+    else:
+        embed = discord.Embed(title=f"ℹ️ **РОЛЬ НЕ В БЕЛОМ СПИСКЕ**", description=f"Роль {role.mention} не находится в белом списке", color=0xffaa00)
+        await ctx.send(embed=embed)
+
+@bot.command(name='list_protected')
+@commands.has_permissions(administrator=True)
+async def list_protected_command(ctx):
+    embed = discord.Embed(title=f"📋 **СПИСОК ЗАЩИЩЁННЫХ РОЛЕЙ**", color=0x3498db)
+    
+    whitelist_text = ""
+    if WHITELISTED_ROLES:
+        for role_id in WHITELISTED_ROLES:
+            role = ctx.guild.get_role(role_id)
+            whitelist_text += f"• {role.mention}\n" if role else f"• Роль ID: `{role_id}` (удалена)\n"
+    else:
+        whitelist_text = "Нет ролей в белом списке"
+    
+    embed.add_field(name="🛡️ **БЕЛЫЙ СПИСОК**", value=whitelist_text, inline=False)
+    
+    replacement_text = ""
+    if REPLACEMENT_ROLES:
+        for role_id in REPLACEMENT_ROLES:
+            role = ctx.guild.get_role(role_id)
+            replacement_text += f"• {role.mention}\n" if role else f"• Роль ID: `{role_id}` (удалена)\n"
+    else:
+        replacement_text = "Нет заменяющих ролей"
+    
+    embed.add_field(name="🔄 **ЗАМЕНЯЮЩИЕ РОЛИ**", value=replacement_text, inline=False)
+    embed.set_footer(text=f"💾 Настройки сохраняются в файл {REPLACEMENT_FILE}")
+    
+    await ctx.send(embed=embed)
+
 # ============== ЗАПУСК ==============
 if __name__ == "__main__":
     token = os.getenv('DISCORD_TOKEN')
@@ -3374,12 +3324,3 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
-
-
-
-
-
-
-
-
-
