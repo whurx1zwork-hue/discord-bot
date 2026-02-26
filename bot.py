@@ -477,7 +477,34 @@ async def voice_xp_loop():
                                 'last_bonus': 0
                             }
                         
-                        old_level = user_data[user_id]['level']
+                        # Проверяем и инициализируем все поля
+if user_id not in user_data:
+    user_data[user_id] = {
+        'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
+        'username': str(message.author), 'messages': 0, 'voice_time': 0,
+        'coins': 0, 'total_coins_earned': 0, 'items': [],
+        'last_message_time': datetime.now().isoformat(),
+        'last_bonus': 0
+    }
+else:
+    # Проверяем наличие всех нужных полей
+    default_fields = {
+        'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
+        'messages': 0, 'voice_time': 0, 'coins': 0, 'total_coins_earned': 0,
+        'items': [], 'last_bonus': 0
+    }
+    
+    for field, default_value in default_fields.items():
+        if field not in user_data[user_id]:
+            user_data[user_id][field] = default_value
+    
+    if 'username' not in user_data[user_id]:
+        user_data[user_id]['username'] = str(message.author)
+    
+    if 'last_message_time' not in user_data[user_id]:
+        user_data[user_id]['last_message_time'] = datetime.now().isoformat()
+
+old_level = user_data[user_id]['level']  # Теперь поле точно существует
                         
                         user_data[user_id]['voice_xp'] += xp_gained
                         user_data[user_id]['voice_time'] += 1
@@ -3341,6 +3368,7 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
 
 
