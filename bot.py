@@ -7,7 +7,8 @@ import asyncio
 from datetime import datetime, timedelta
 import math
 import time
-
+from database import Database
+db = Database()
 # ============== НАСТРОЙКИ ==============
 intents = discord.Intents.default()
 intents.message_content = True
@@ -3131,5 +3132,6 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
 
