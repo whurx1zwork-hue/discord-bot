@@ -502,7 +502,7 @@ async def voice_xp_loop():
         await asyncio.sleep(60)
 
 # ============== ФУНКЦИИ ДЛЯ ПРИГЛАШЕНИЙ ==============
-aasync def check_invite_roles(guild, member):
+async def check_invite_roles(guild, member):
     """Проверяет и выдаёт роли за приглашения"""
     inviter_id = str(member.id)
     
@@ -3263,4 +3263,5 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
