@@ -154,14 +154,28 @@ def save_data(data):
         json.dump(data, f, indent=4, ensure_ascii=False)
 
 def load_shop():
-    if os.path.exists(SHOP_FILE):
-        with open(SHOP_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+    try:
+        if os.path.exists(SHOP_FILE):
+            with open(SHOP_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                print(f"✅ Магазин загружен: {len(data)} товаров из {SHOP_FILE}")
+                return data
+        else:
+            print(f"ℹ️ Файл {SHOP_FILE} не найден, создаем новый магазин")
+            return {}
+    except Exception as e:
+        print(f"❌ ОШИБКА загрузки магазина: {e}")
+        return {}
 
 def save_shop(shop):
-    with open(SHOP_FILE, 'w', encoding='utf-8') as f:
-        json.dump(shop, f, indent=4, ensure_ascii=False)
+    try:
+        with open(SHOP_FILE, 'w', encoding='utf-8') as f:
+            json.dump(shop, f, indent=4, ensure_ascii=False)
+        print(f"✅ Магазин сохранен: {len(shop)} товаров в {SHOP_FILE}")
+        return True
+    except Exception as e:
+        print(f"❌ ОШИБКА сохранения магазина: {e}")
+        return False
 
 def load_boosts():
     global BOOST_ROLES
@@ -2983,9 +2997,13 @@ async def add_item_command(ctx, item_id: str, price: int, *, name: str):
         return
     
     shop_data[item_id] = {'name': name, 'price': price, 'description': 'Нет описания'}
-    save_shop(shop_data)
     
-    embed = discord.Embed(title=f"✅ **ТОВАР ДОБАВЛЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙", color=0x00ff00)
+    # Пробуем сохранить
+    if save_shop(shop_data):
+        embed = discord.Embed(title=f"✅ **ТОВАР ДОБАВЛЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\n\n💾 Данные сохранены!", color=0x00ff00)
+    else:
+        embed = discord.Embed(title=f"⚠️ **ТОВАР ДОБАВЛЕН НО НЕ СОХРАНЕН**", description=f"ID: `{item_id}`\nНазвание: **{name}**\nЦена: **{price}** 🪙\n\n❌ Ошибка сохранения! Товар пропадет после перезапуска.", color=0xffaa00)
+    
     await ctx.send(embed=embed)
 
 @bot.command(name='add_temp_item')
@@ -3113,4 +3131,5 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
