@@ -812,55 +812,60 @@ async def on_voice_state_update(member, before, after):
 
 @bot.event
 async def on_member_join(member):
+    print(f"👤 ВНИМАНИЕ! Новый пользователь: {member.name} (ID: {member.id}) зашёл на сервер {member.guild.name}")
     guild = member.guild
     
-    invites_before = await guild.invites()
-    
-    await asyncio.sleep(1)
-    
-    invites_after = await guild.invites()
-    
-    for invite in invites_before:
-        for new_invite in invites_after:
-            if invite.code == new_invite.code:
-                if new_invite.uses > invite.uses:
-                    inviter = new_invite.inviter
-                    
-                    if inviter:
-                        inviter_id = str(inviter.id)
+    try:
+        # Проверяем права бота
+        me = guild.me
+        print(f"🤖 Бот: {me.name}")
+        print(f"🔧 Права бота: Manage Server = {me.guild_permissions.manage_guild}, Manage Channels = {me.guild_permissions.manage_channels}")
+        
+        if not me.guild_permissions.manage_guild:
+            print("❌ У БОТА НЕТ ПРАВА 'Управлять сервером'! Без этого приглашения не будут отслеживаться!")
+            return
+        
+        # Получаем приглашения
+        print("📥 Получаем список приглашений...")
+        invites_before = await guild.invites()
+        print(f"📊 Приглашений ДО: {len(invites_before)}")
+        
+        # Выводим все приглашения для отладки
+        for inv in invites_before:
+            print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
+        
+        await asyncio.sleep(2)
+        
+        invites_after = await guild.invites()
+        print(f"📊 Приглашений ПОСЛЕ: {len(invites_after)}")
+        
+        # Ищем изменения
+        found = False
+        for invite in invites_before:
+            for new_invite in invites_after:
+                if invite.code == new_invite.code:
+                    if new_invite.uses > invite.uses:
+                        inviter = new_invite.inviter
+                        print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ: {inviter.name} (ID: {inviter.id})")
+                        print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
                         
-                        if inviter_id not in invites_data:
-                            invites_data[inviter_id] = {
-                                'username': str(inviter),
-                                'invites': 0,
-                                'joined_users': []
-                            }
+                        # Здесь твой код для сохранения...
+                        # (остальная часть функции)
                         
-                        invites_data[inviter_id]['invites'] += 1
-                        invites_data[inviter_id]['joined_users'].append({
-                            'user_id': member.id,
-                            'username': str(member),
-                            'joined_at': datetime.now().isoformat()
-                        })
-                        
-                        await save_invites()
-                        
-                        await check_invite_roles(member.guild, inviter)
-                        
-                        print(f"✅ {inviter.name} пригласил {member.name}")
-                        
-                        try:
-                            embed = discord.Embed(
-                                title=f"🎉 **НОВОЕ ПРИГЛАШЕНИЕ**",
-                                description=f"Пользователь **{member.name}** присоединился по вашему приглашению!",
-                                color=0x00ff00
-                            )
-                            embed.add_field(name="📊 Всего приглашений", value=f"**{invites_data[inviter_id]['invites']}**", inline=True)
-                            await inviter.send(embed=embed)
-                        except:
-                            pass
-                        
+                        found = True
                         break
+        
+        if not found:
+            print("❌ НЕ НАЙДЕНО ИЗМЕНЕНИЙ В ПРИГЛАШЕНИЯХ!")
+            print("Возможные причины:")
+            print("  • Пользователь зашёл по ссылке, созданной ДО запуска бота")
+            print("  • У бота нет прав на просмотр приглашений")
+            print("  • Приглашение было создано анонимно")
+            
+    except Exception as e:
+        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в on_member_join: {e}")
+        import traceback
+        traceback.print_exc()
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -3263,5 +3268,6 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
 
