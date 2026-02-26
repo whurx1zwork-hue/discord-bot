@@ -834,18 +834,12 @@ async def on_member_join(member):
         for inv in invites_before:
             print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
         
-        # Ждём 2 секунды
-        print("⏰ Ждём 5 секунд (чтобы Discord обновил счётчик)...")
-        await asyncio.sleep(5)
+        # ===== ПЕРВАЯ ПОПЫТКА (через 2 секунды) =====
+        print("⏰ Первая попытка: ждём 2 секунды...")
+        await asyncio.sleep(2)
         
-        # Получаем приглашения ПОСЛЕ
-        print("📥 Получаем список приглашений ПОСЛЕ...")
         invites_after = await guild.invites()
-        print(f"📊 Приглашений ПОСЛЕ: {len(invites_after)}")
-        
-        # Выводим все приглашения после
-        for inv in invites_after:
-            print(f"  • Код: {inv.code}, Создатель: {inv.inviter.name}, Использовано: {inv.uses}")
+        print(f"📊 Приглашений ПОСЛЕ (1-я попытка): {len(invites_after)}")
         
         # Ищем изменения
         found = False
@@ -854,57 +848,98 @@ async def on_member_join(member):
                 if invite.code == new_invite.code:
                     if new_invite.uses > invite.uses:
                         inviter = new_invite.inviter
-                        print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ: {inviter.name} (ID: {inviter.id})")
+                        print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (1-я попытка): {inviter.name} (ID: {inviter.id})")
                         print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
-                        
-                        if inviter:
-                            inviter_id = str(inviter.id)
-                            
-                            if inviter_id not in invites_data:
-                                invites_data[inviter_id] = {
-                                    'username': str(inviter),
-                                    'invites': 0,
-                                    'joined_users': []
-                                }
-                            
-                            invites_data[inviter_id]['invites'] += 1
-                            invites_data[inviter_id]['joined_users'].append({
-                                'user_id': member.id,
-                                'username': str(member),
-                                'joined_at': datetime.now().isoformat()
-                            })
-                            
-                            await save_invites()
-                            print(f"✅ Приглашение засчитано! Теперь у {inviter.name} {invites_data[inviter_id]['invites']} приглашений")
-                            
-                            await check_invite_roles(member.guild, inviter)
-                            
-                            try:
-                                embed = discord.Embed(
-                                    title=f"🎉 **НОВОЕ ПРИГЛАШЕНИЕ**",
-                                    description=f"Пользователь **{member.name}** присоединился по вашему приглашению!",
-                                    color=0x00ff00
-                                )
-                                embed.add_field(name="📊 Всего приглашений", value=f"**{invites_data[inviter_id]['invites']}**", inline=True)
-                                await inviter.send(embed=embed)
-                                print(f"✅ Уведомление отправлено {inviter.name}")
-                            except Exception as e:
-                                print(f"❌ Не удалось отправить уведомление: {e}")
-                        
+                        await process_invite(inviter, member, guild)
                         found = True
                         break
         
+        # ===== ВТОРАЯ ПОПЫТКА (если не нашли, ждём ещё 3 секунды) =====
         if not found:
-            print("❌ НЕ НАЙДЕНО ИЗМЕНЕНИЙ В ПРИГЛАШЕНИЯХ!")
+            print("⏰ Первая попытка не дала результатов. Ждём ещё 3 секунды (всего 5)...")
+            await asyncio.sleep(3)
+            
+            invites_after_2 = await guild.invites()
+            print(f"📊 Приглашений ПОСЛЕ (2-я попытка): {len(invites_after_2)}")
+            
+            for invite in invites_before:
+                for new_invite in invites_after_2:
+                    if invite.code == new_invite.code:
+                        if new_invite.uses > invite.uses:
+                            inviter = new_invite.inviter
+                            print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (2-я попытка): {inviter.name} (ID: {inviter.id})")
+                            print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
+                            await process_invite(inviter, member, guild)
+                            found = True
+                            break
+        
+        # ===== ТРЕТЬЯ ПОПЫТКА (если всё ещё не нашли, ждём ещё 2 секунды) =====
+        if not found:
+            print("⏰ Вторая попытка не дала результатов. Ждём ещё 2 секунды (всего 7)...")
+            await asyncio.sleep(2)
+            
+            invites_after_3 = await guild.invites()
+            print(f"📊 Приглашений ПОСЛЕ (3-я попытка): {len(invites_after_3)}")
+            
+            for invite in invites_before:
+                for new_invite in invites_after_3:
+                    if invite.code == new_invite.code:
+                        if new_invite.uses > invite.uses:
+                            inviter = new_invite.inviter
+                            print(f"✅ НАЙДЕН ПРИГЛАСИВШИЙ (3-я попытка): {inviter.name} (ID: {inviter.id})")
+                            print(f"📈 Было использовано: {invite.uses}, Стало: {new_invite.uses}")
+                            await process_invite(inviter, member, guild)
+                            found = True
+                            break
+        
+        if not found:
+            print("❌ НЕ НАЙДЕНО ИЗМЕНЕНИЙ ПОСЛЕ 3 ПОПЫТОК!")
             print("Возможные причины:")
             print("  • Пользователь зашёл по ссылке, созданной ДО запуска бота")
             print("  • У бота нет прав на просмотр приглашений")
             print("  • Приглашение было создано анонимно")
+            print("  • Discord тормозит больше 7 секунд (редко, но бывает)")
             
     except Exception as e:
         print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в on_member_join: {e}")
         import traceback
         traceback.print_exc()
+
+
+async def process_invite(inviter, member, guild):
+    """Обработка найденного приглашения"""
+    inviter_id = str(inviter.id)
+    
+    if inviter_id not in invites_data:
+        invites_data[inviter_id] = {
+            'username': str(inviter),
+            'invites': 0,
+            'joined_users': []
+        }
+    
+    invites_data[inviter_id]['invites'] += 1
+    invites_data[inviter_id]['joined_users'].append({
+        'user_id': member.id,
+        'username': str(member),
+        'joined_at': datetime.now().isoformat()
+    })
+    
+    await save_invites()
+    print(f"✅ Приглашение засчитано! Теперь у {inviter.name} {invites_data[inviter_id]['invites']} приглашений")
+    
+    await check_invite_roles(guild, inviter)
+    
+    try:
+        embed = discord.Embed(
+            title=f"🎉 **НОВОЕ ПРИГЛАШЕНИЕ**",
+            description=f"Пользователь **{member.name}** присоединился по вашему приглашению!",
+            color=0x00ff00
+        )
+        embed.add_field(name="📊 Всего приглашений", value=f"**{invites_data[inviter_id]['invites']}**", inline=True)
+        await inviter.send(embed=embed)
+        print(f"✅ Уведомление отправлено {inviter.name}")
+    except Exception as e:
+        print(f"❌ Не удалось отправить уведомление: {e}")
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
@@ -3306,6 +3341,7 @@ if __name__ == "__main__":
     else:
         print(f"✅ Бот запускается...")
         bot.run(token)
+
 
 
 
