@@ -669,10 +669,7 @@ async def on_message(message):
     
     user_id = str(message.author.id)
     
-    boost_multiplier = get_user_boost(message.author)
-    base_xp = random.randint(10, 20)
-    xp_gained = int(base_xp * boost_multiplier)
-    
+    # ===== ИНИЦИАЛИЗАЦИЯ ДАННЫХ ПОЛЬЗОВАТЕЛЯ =====
     if user_id not in user_data:
         user_data[user_id] = {
             'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
@@ -682,16 +679,25 @@ async def on_message(message):
             'last_bonus': 0
         }
     else:
-        for field in ['message_xp', 'voice_xp', 'voice_time', 'coins', 'total_coins_earned', 'items', 'last_bonus']:
+        # Проверяем наличие всех полей
+        required_fields = {
+            'xp': 0, 'level': 0, 'total_xp': 0, 'voice_xp': 0, 'message_xp': 0,
+            'messages': 0, 'voice_time': 0, 'coins': 0, 'total_coins_earned': 0,
+            'items': [], 'last_bonus': 0, 'username': str(message.author),
+            'last_message_time': datetime.now().isoformat()
+        }
+        
+        for field, default_value in required_fields.items():
             if field not in user_data[user_id]:
-                if field == 'items':
-                    user_data[user_id][field] = []
-                elif field == 'last_bonus':
-                    user_data[user_id][field] = 0
-                else:
-                    user_data[user_id][field] = 0
+                user_data[user_id][field] = default_value
     
-    old_level = user_data[user_id]['level']
+    # Дальше продолжается твой код...
+    boost_multiplier = get_user_boost(message.author)
+    base_xp = random.randint(10, 20)
+    xp_gained = int(base_xp * boost_multiplier)
+    
+    old_level = user_data[user_id]['level']  # Теперь поле точно есть
+    # ... остальной код
     
     user_data[user_id]['message_xp'] += xp_gained
     user_data[user_id]['total_xp'] += xp_gained
